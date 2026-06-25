@@ -1,6 +1,6 @@
 {
   "name": "@cloudalgo/eslint-parser-apex",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "ESLint custom parser for Salesforce Apex — bridges @apexdevtools/apex-parser to ESTree",
   "type": "module",
   "main": "dist/index.js",

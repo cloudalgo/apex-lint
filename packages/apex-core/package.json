@@ -1,6 +1,6 @@
 {
   "name": "@cloudalgo/apex-core",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Pure-Node Apex static-analysis engine (parser wrapper, rule engine, rule catalog, metadata providers)",
   "type": "module",
   "main": "dist/index.js",
