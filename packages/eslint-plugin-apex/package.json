@@ -1,6 +1,6 @@
 {
   "name": "@cloudalgo/eslint-plugin-apex",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "ESLint plugin for Salesforce Apex — 15 rules for SOQL injection, governor limits, security and code quality",
   "type": "module",
   "main": "dist/index.js",
