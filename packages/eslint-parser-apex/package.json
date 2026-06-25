@@ -1,23 +1,25 @@
 {
-  "name": "@cloudalgo/apex-lint",
+  "name": "@cloudalgo/eslint-parser-apex",
   "version": "0.1.0",
-  "description": "Zero-JVM Apex linter CLI — pure Node static analysis for Salesforce",
+  "description": "ESLint custom parser for Salesforce Apex — bridges @apexdevtools/apex-parser to ESTree",
   "type": "module",
-  "bin": {
-    "apex-lint": "dist/cli.js"
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
   },
   "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@cloudalgo/apex-core": "workspace:*"
+    "@apexdevtools/apex-parser": "^5.0.0"
   },
   "license": "BSD-3-Clause",
   "repository": { "type": "git", "url": "https://github.com/cloudalgo/apex-lint" },
   "homepage": "https://github.com/cloudalgo/apex-lint#readme",
   "bugs": { "url": "https://github.com/cloudalgo/apex-lint/issues" },
-  "keywords": ["salesforce", "apex", "lint", "cli", "static-analysis", "pmd"],
+  "keywords": ["salesforce", "apex", "eslint", "parser"],
   "engines": { "node": ">=20" },
   "publishConfig": { "access": "public" }
 }

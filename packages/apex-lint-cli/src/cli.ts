@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   Linter,
@@ -10,9 +10,9 @@ import {
   type Severity,
   type Violation,
 } from "@cloudalgo/apex-core";
-import { loadConfig } from "./config.js";
+import { loadConfig, type ApexLintConfig } from "./config.js";
 import { discoverApexFiles } from "./discover.js";
-import { reportPretty, reportJson, countBySeverity } from "./reporters/text.js";
+import { reportPretty, reportJson } from "./reporters/text.js";
 import { reportSarif } from "./reporters/sarif.js";
 
 const SEV_RANK: Record<Severity, number> = {
@@ -28,9 +28,16 @@ interface Args {
   format: "pretty" | "json" | "sarif";
   failOn: Severity;
   configPath?: string;
+  outputPath?: string;
   metadataRoots: string[];
   listRules: boolean;
   help: boolean;
+  /** CLI --rules: only run these rule IDs (overrides config). */
+  rules?: string[];
+  /** CLI --exclude-rules: exclude these rule IDs (merged with config). */
+  excludeRules?: string[];
+  /** CLI --categories: only run rules in these categories (overrides config). */
+  categories?: string[];
 }
 
 function parseArgs(argv: string[]): Args {
@@ -56,11 +63,24 @@ function parseArgs(argv: string[]): Args {
       case "-c":
         args.configPath = argv[++i];
         break;
+      case "--output":
+      case "-o":
+        args.outputPath = argv[++i];
+        break;
       case "--metadata-root":
         args.metadataRoots.push(argv[++i]);
         break;
       case "--list-rules":
         args.listRules = true;
+        break;
+      case "--rules":
+        args.rules = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+        break;
+      case "--exclude-rules":
+        args.excludeRules = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+        break;
+      case "--categories":
+        args.categories = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
         break;
       case "--help":
       case "-h":
@@ -83,20 +103,59 @@ Usage:
   apex-lint <path...> [options]
 
 Options:
-  -f, --format <fmt>      pretty | json | sarif        (default: pretty)
-      --fail-on <sev>     fail build at this severity+  (default: moderate)
-                          critical | high | moderate | low | info
-  -c, --config <file>     path to config json
-      --metadata-root <d> sfdx project dir for SObject metadata (repeatable)
-      --list-rules        print the rule catalog and exit
-  -h, --help              show this help
+  -f, --format <fmt>          pretty | json | sarif               (default: pretty)
+  -o, --output <file>         write results to file instead of stdout
+      --fail-on <sev>         fail build at this severity+        (default: moderate)
+                              critical | high | moderate | low | info
+  -c, --config <file>         path to config json (default: apexlint.config.json)
+      --rules <ids>           comma-separated rule IDs to run     (default: all)
+      --exclude-rules <ids>   comma-separated rule IDs to exclude
+      --categories <cats>     comma-separated categories to run
+                              security | performance | error-prone | design
+                              best-practices | code-style
+      --metadata-root <dir>   sfdx project dir for SObject metadata (repeatable)
+      --list-rules            print the rule catalog and exit
+  -h, --help                  show this help
+
+Config file (apexlint.config.json or .apexlintrc.json, auto-discovered):
+  {
+    "rules": ["SoqlInLoop", "ApexSOQLInjection"],   // run only these rules
+    "excludeRules": ["MethodNamingConventions"],     // skip these rules
+    "categories": ["security", "performance"],       // run only these categories
+    "severityOverrides": { "EmptyCatchBlock": "critical" },
+    "excludePaths": ["**/*Test.cls", "**/legacy/**"],
+    "maxViolationsPerFile": 50,
+    "metadataRoots": ["./force-app"],
+    "failOn": "high"
+  }
 
 Exit codes: 0 = clean (below threshold), 1 = violations at/above threshold, 2 = usage error.`;
 
-function applyConfig(rules: Rule[], overrides: Record<string, Severity>, disabled: Set<string>): Rule[] {
+/**
+ * Filter and configure the rule set.
+ * Priority: CLI flags > config file > defaults (all rules, all categories).
+ */
+function selectRules(
+  rules: Rule[],
+  config: ApexLintConfig,
+  cli: { rules?: string[]; excludeRules?: string[]; categories?: string[] },
+): Rule[] {
+  // Include list: CLI overrides config
+  const includeIds = cli.rules ?? config.rules;
+  // Exclude list: CLI + config merged
+  const excludeIds = new Set<string>([
+    ...config.disabledRules,
+    ...(config.excludeRules ?? []),
+    ...(cli.excludeRules ?? []),
+  ]);
+  // Category filter: CLI overrides config
+  const cats = cli.categories ?? config.categories;
+
   return rules
-    .filter((r) => !disabled.has(r.id))
-    .map((r) => (overrides[r.id] ? { ...r, severity: overrides[r.id] } : r));
+    .filter((r) => !excludeIds.has(r.id))
+    .filter((r) => !includeIds || includeIds.map((s) => s.toLowerCase()).includes(r.id.toLowerCase()))
+    .filter((r) => !cats || cats.map((s) => s.toLowerCase()).includes(r.category.toLowerCase()))
+    .map((r) => (config.severityOverrides[r.id] ? { ...r, severity: config.severityOverrides[r.id] } : r));
 }
 
 function main(): void {
@@ -108,13 +167,16 @@ function main(): void {
     return;
   }
   if (args.listRules) {
-    process.stdout.write("Built-in rules:\n\n");
-    for (const r of allRules) {
-      const tag = r.needsMetadata ? " [metadata]" : "";
-      process.stdout.write(
-        `  ${r.id.padEnd(26)} ${r.severity.padEnd(9)} ${r.category}${tag}\n      ${r.description}\n`,
-      );
+    const categories = [...new Set(allRules.map((r) => r.category))];
+    for (const cat of categories) {
+      const catRules = allRules.filter((r) => r.category === cat);
+      process.stdout.write(`\n${cat} (${catRules.length})\n${"─".repeat(cat.length + 4)}\n`);
+      for (const r of catRules) {
+        const meta = r.needsMetadata ? " [metadata]" : "";
+        process.stdout.write(`  ${r.id.padEnd(32)} ${r.severity.padEnd(10)} ${r.description}${meta}\n`);
+      }
     }
+    process.stdout.write(`\n${allRules.length} rules total.\n`);
     return;
   }
   if (args.paths.length === 0) {
@@ -122,9 +184,18 @@ function main(): void {
     process.exit(2);
   }
 
-  const { config, path: cfgPath } = loadConfig(cwd, args.configPath);
-  const disabled = new Set(config.disabledRules);
-  const rules = applyConfig(allRules, config.severityOverrides, disabled);
+  const { config, path: cfgPath } = loadConfig(cwd, args.configPath, args.paths);
+
+  const rules = selectRules(allRules, config, {
+    rules: args.rules,
+    excludeRules: args.excludeRules,
+    categories: args.categories,
+  });
+
+  if (rules.length === 0) {
+    process.stderr.write("Warning: no rules selected after filtering — check --rules / --categories / config.\n");
+    process.exit(0);
+  }
 
   // Metadata: explicit flags > config > auto (the target dirs themselves).
   const roots =
@@ -137,9 +208,13 @@ function main(): void {
     roots.length > 0 ? new FilesystemMetadataProvider(roots.map((r) => resolve(r))) : new NullMetadataProvider();
 
   const linter = new Linter(rules);
-  const files = discoverApexFiles(args.paths.map((p) => resolve(p)));
+  const files = discoverApexFiles(
+    args.paths.map((p) => resolve(p)),
+    config.excludePaths,
+  );
   const all: Violation[] = [];
   const syntaxProblems: string[] = [];
+  let totalSuppressed = 0;
 
   for (const file of files) {
     let src: string;
@@ -149,31 +224,44 @@ function main(): void {
       continue;
     }
     const result = linter.lint(src, { filePath: file, metadata });
-    all.push(...result.violations);
+    const violations = config.maxViolationsPerFile
+      ? result.violations.slice(0, config.maxViolationsPerFile)
+      : result.violations;
+    all.push(...violations);
+    totalSuppressed += result.suppressedCount;
     for (const e of result.syntaxErrors) {
       syntaxProblems.push(`${file}:${e.line}:${e.column} parse error: ${e.message}`);
     }
   }
 
   // Output
+  const emit = args.outputPath
+    ? (s: string) => writeFileSync(resolve(args.outputPath!), s, "utf8")
+    : (s: string) => process.stdout.write(s);
+
   if (args.format === "json") {
-    process.stdout.write(reportJson(all) + "\n");
+    emit(reportJson(all) + "\n");
   } else if (args.format === "sarif") {
-    process.stdout.write(reportSarif(all, rules, cwd) + "\n");
+    emit(reportSarif(all, rules, cwd) + "\n");
   } else {
     if (cfgPath) process.stderr.write(`Using config: ${cfgPath}\n`);
-    process.stderr.write(`Scanned ${files.length} file(s)` +
-      (metadata instanceof FilesystemMetadataProvider ? `, ${metadata.objectNames().length} SObject(s) known.\n` : ".\n"));
-    process.stdout.write(reportPretty(all, cwd) + "\n");
+    const suppNote = totalSuppressed > 0 ? `, ${totalSuppressed} suppressed` : "";
+    const ruleNote = rules.length < allRules.length ? `, ${rules.length}/${allRules.length} rules active` : "";
+    process.stderr.write(
+      `Scanned ${files.length} file(s)${ruleNote}${suppNote}` +
+        (metadata instanceof FilesystemMetadataProvider ? `, ${metadata.objectNames().length} SObject(s) known.\n` : ".\n"),
+    );
+    emit(reportPretty(all, cwd) + "\n");
     if (syntaxProblems.length) {
       process.stderr.write("\nParse errors:\n" + syntaxProblems.join("\n") + "\n");
     }
   }
+  if (args.outputPath) process.stderr.write(`Results written to ${args.outputPath}\n`);
 
-  // Exit code from threshold
-  const threshold = SEV_RANK[args.failOn];
+  // Exit code: config failOn < CLI --fail-on
+  const failOn = config.failOn ?? args.failOn;
+  const threshold = SEV_RANK[failOn as Severity] ?? SEV_RANK[args.failOn];
   const failing = all.some((v) => SEV_RANK[v.severity] >= threshold);
-  void countBySeverity;
   process.exit(failing ? 1 : 0);
 }
 

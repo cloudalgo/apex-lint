@@ -8,6 +8,7 @@ import {
 } from "../ast/walk.js";
 import type { Rule, RuleContext, Violation } from "./types.js";
 import { NullMetadataProvider, type MetadataProvider } from "../metadata/provider.js";
+import { buildSuppressions } from "./suppression.js";
 
 export interface LintOptions {
   filePath?: string;
@@ -19,6 +20,7 @@ export interface LintOptions {
 export interface LintResult {
   filePath: string;
   violations: Violation[];
+  suppressedCount: number;
   syntaxErrors: { line: number; column: number; message: string }[];
 }
 
@@ -70,7 +72,22 @@ export class Linter {
       }
     });
 
-    violations.sort((a, b) => a.line - b.line || a.column - b.column);
-    return { filePath, violations, syntaxErrors };
+    const suppressions = buildSuppressions(source, tree);
+    const finalViolations = violations.filter(
+      (v) =>
+        !suppressions.some(
+          (s) =>
+            v.line >= s.startLine &&
+            v.line <= s.endLine &&
+            (s.ruleId === null || s.ruleId === v.ruleId),
+        ),
+    );
+    finalViolations.sort((a, b) => a.line - b.line || a.column - b.column);
+    return {
+      filePath,
+      violations: finalViolations,
+      suppressedCount: violations.length - finalViolations.length,
+      syntaxErrors,
+    };
   }
 }

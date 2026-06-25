@@ -1,0 +1,63 @@
+{
+  "_comment": "Copy this file to apexlint.config.json and remove the _comment fields.",
+
+  "_comment_rules": "Run ONLY these rule IDs. Remove to run all rules.",
+  "rules": [
+    "SoqlInLoop",
+    "DmlInLoop",
+    "ApexSOQLInjection",
+    "ApexOpenRedirect",
+    "ApexSSRF",
+    "ApexXSSFromURLParam",
+    "ApexBadCrypto",
+    "ApexSharingViolations",
+    "DatabaseQueryWithVariable",
+    "UnguardedCrudOperation",
+    "EmptyCatchBlock",
+    "FutureMethodChaining",
+    "TestWithoutAsserts"
+  ],
+
+  "_comment_excludeRules": "Skip these rule IDs (merged with --exclude-rules CLI flag).",
+  "excludeRules": [
+    "MethodNamingConventions",
+    "ApexAssertionsShouldIncludeMessage",
+    "ApexUnitTestClassShouldHaveRunAs"
+  ],
+
+  "_comment_categories": "Run only rules in these categories. Remove to run all categories.",
+  "categories": [
+    "security",
+    "performance",
+    "error-prone",
+    "design",
+    "best-practices",
+    "code-style"
+  ],
+
+  "_comment_severityOverrides": "Override severity for specific rules.",
+  "severityOverrides": {
+    "EmptyCatchBlock": "critical",
+    "AvoidGlobalModifier": "info",
+    "DebugsShouldUseLoggingLevel": "info"
+  },
+
+  "_comment_excludePaths": "Glob patterns for files to skip. Supports * ** ?",
+  "excludePaths": [
+    "**/test/**",
+    "**/*Test.cls",
+    "**/legacy/**",
+    "**/generated/**"
+  ],
+
+  "_comment_maxViolationsPerFile": "Cap results per file. Useful when onboarding a large codebase.",
+  "maxViolationsPerFile": 20,
+
+  "_comment_metadataRoots": "sfdx project roots for SObject metadata (enables UnguardedCrudOperation).",
+  "metadataRoots": [
+    "./force-app/main/default"
+  ],
+
+  "_comment_failOn": "Exit code 1 when any violation is at or above this severity.",
+  "failOn": "high"
+}

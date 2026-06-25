@@ -1,7 +1,7 @@
 {
-  "name": "@cloudalgo/apex-core",
+  "name": "@cloudalgo/eslint-plugin-apex",
   "version": "0.1.0",
-  "description": "Pure-Node Apex static-analysis engine (parser wrapper, rule engine, rule catalog, metadata providers)",
+  "description": "ESLint plugin for Salesforce Apex — 15 rules for SOQL injection, governor limits, security and code quality",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,13 +13,17 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@apexdevtools/apex-parser": "^5.0.0"
+    "@cloudalgo/apex-core": "workspace:*",
+    "@cloudalgo/eslint-parser-apex": "workspace:*"
+  },
+  "peerDependencies": {
+    "eslint": ">=8.0.0"
   },
   "license": "BSD-3-Clause",
   "repository": { "type": "git", "url": "https://github.com/cloudalgo/apex-lint" },
   "homepage": "https://github.com/cloudalgo/apex-lint#readme",
   "bugs": { "url": "https://github.com/cloudalgo/apex-lint/issues" },
-  "keywords": ["salesforce", "apex", "lint", "static-analysis", "pmd"],
+  "keywords": ["salesforce", "apex", "eslint", "eslint-plugin", "lint", "static-analysis"],
   "engines": { "node": ">=20" },
   "publishConfig": { "access": "public" }
 }

@@ -21,7 +21,8 @@ export interface SyntaxError {
   message: string;
 }
 
-const TRIGGER_RE = /^\s*trigger\b/i;
+// Allow leading line comments before the trigger keyword (common in real orgs)
+const TRIGGER_RE = /^\s*(?:\/\/[^\n]*\n\s*)*trigger\b/i;
 
 /**
  * Parse an Apex class or trigger. Inline SOQL/SOSL is parsed into the same

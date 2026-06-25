@@ -46,13 +46,26 @@ const LOOP_TYPES = new Set([
 ]);
 
 /**
- * True if `node` sits inside a for/while/do loop. Walks up via parentCtx,
- * which the grammar populates on every context node.
+ * True if `node` sits inside the *body* of a for/while/do loop.
+ *
+ * For `for(Type x : [SOQL]) { body }` the SOQL is the iterable (runs once).
+ * We must not count it as "in a loop" — it is the recommended Salesforce
+ * bulkification pattern and has no governor-limit impact.
+ * Detection: when walking up to ForStatementContext, check whether we arrived
+ * via ForControlContext (iterable position → false) or any other child (body → true).
  */
 export function isInsideLoop(node: any): boolean {
   let p = node?.parentCtx;
+  let prev: any = node;
   while (p) {
-    if (LOOP_TYPES.has(nodeType(p))) return true;
+    const t = nodeType(p);
+    if (t === "ForStatementContext") {
+      // came through ForControlContext = we're in the for-each header, not the body
+      if (nodeType(prev) === "ForControlContext") return false;
+      return true;
+    }
+    if (t === "WhileStatementContext" || t === "DoWhileStatementContext") return true;
+    prev = p;
     p = p.parentCtx;
   }
   return false;

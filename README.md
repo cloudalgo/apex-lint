@@ -1,19 +1,11 @@
 # apex-lint
 
-A pure-Node, **zero-JVM** static analysis engine for Salesforce Apex. No Java, no
-`apex-jorje`, no Code Analyzer plugin — it parses Apex with the same ANTLR
-grammar PMD 7 itself uses (`@apexdevtools/apex-parser`), runs rules against the
-parse tree, and emits findings as pretty text, JSON, or SARIF.
+Zero-JVM static analysis for Salesforce Apex. No Java, no apex-jorje, no Code Analyzer plugin — parses Apex with the same ANTLR grammar PMD 7 uses (`@apexdevtools/apex-parser`), runs 41 built-in rules against the parse tree, and emits findings as pretty text, JSON, or SARIF.
 
-This repo is a **monorepo** with two packages:
-
-| Package | What it is |
-|---|---|
-| `@cloudalgo/apex-core` | The engine: parser wrapper, rule engine, rule catalog, metadata providers. Embeds in AlgoScope. |
-| `@cloudalgo/apex-lint` | The CLI: file discovery, config, reporters, exit codes. Wraps the core for terminal / CI use. |
-
-Both consume one core so rules never diverge between the embedded scanner and
-the standalone tool.
+| Package | Description |
+|---------|-------------|
+| `@cloudalgo/apex-core` | Engine: parser, rule dispatcher, rule catalog, metadata providers. Embeds in any Node app. |
+| `@cloudalgo/apex-lint` | CLI: file discovery, config, reporters, exit codes. |
 
 ---
 
@@ -21,82 +13,245 @@ the standalone tool.
 
 ```bash
 # requires Node >= 20
-pnpm install
-pnpm -r build
+npm install -g @cloudalgo/apex-lint
 
-# lint an sfdx project (auto-detects objects/ for SObject metadata)
+# lint an sfdx project
+apex-lint path/to/force-app
+
+# or run from the monorepo
+pnpm install && pnpm -r build
 node packages/apex-lint-cli/dist/cli.js path/to/force-app
-
-# or against the bundled fixture
-pnpm demo
-```
-
-Output formats: `--format pretty|json|sarif`. SARIF uploads straight into GitHub
-code scanning. Exit code is `1` when any violation meets `--fail-on` (default
-`moderate`), `0` otherwise — wire that into CI.
-
-```bash
-node packages/apex-lint-cli/dist/cli.js force-app --format sarif --fail-on high > results.sarif
-node packages/apex-lint-cli/dist/cli.js --list-rules
 ```
 
 ---
 
-## Architecture (the parts that matter)
+## CLI reference
+
+```
+apex-lint <path...> [options]
+
+Options:
+  -f, --format <fmt>          pretty | json | sarif               (default: pretty)
+  -o, --output <file>         write results to file instead of stdout
+      --fail-on <sev>         fail build at this severity+        (default: moderate)
+                              critical | high | moderate | low | info
+  -c, --config <file>         path to config json (default: apexlint.config.json)
+      --rules <ids>           comma-separated rule IDs to run     (default: all)
+      --exclude-rules <ids>   comma-separated rule IDs to exclude
+      --categories <cats>     comma-separated categories to run
+                              security | performance | error-prone | design
+                              best-practices | code-style
+      --metadata-root <dir>   sfdx project dir for SObject metadata (repeatable)
+      --list-rules            print the rule catalog grouped by category
+  -h, --help                  show this help
+
+Exit codes: 0 = clean (below threshold), 1 = violations at/above threshold, 2 = usage error.
+```
+
+Summary and progress always print to **stderr**; violation output goes to `--output` or stdout. CI logs show the summary even when capturing results to a file.
+
+### Common usage
+
+```bash
+# Run only security rules
+apex-lint force-app --categories security
+
+# Run two specific rules
+apex-lint force-app --rules SoqlInLoop,DmlInLoop
+
+# Exclude noisy low-value rules
+apex-lint force-app --exclude-rules MethodNamingConventions,ApexAssertionsShouldIncludeMessage
+
+# SARIF for GitHub code scanning
+apex-lint force-app --format sarif --output results.sarif
+
+# JSON for custom tooling
+apex-lint force-app --format json --output results.json
+
+# Only fail CI on high+
+apex-lint force-app --fail-on high
+
+# List all 41 rules grouped by category
+apex-lint --list-rules
+```
+
+---
+
+## Configuration
+
+Place `apexlint.config.json` (or `.apexlintrc.json`) in your project root. Auto-discovered from the current directory and each scanned path. Pass an explicit path with `--config`.
+
+```json
+{
+  "rules": ["SoqlInLoop", "DmlInLoop", "ApexSOQLInjection"],
+  "excludeRules": ["MethodNamingConventions", "ApexAssertionsShouldIncludeMessage"],
+  "categories": ["security", "performance"],
+  "severityOverrides": {
+    "EmptyCatchBlock": "critical",
+    "AvoidGlobalModifier": "info"
+  },
+  "excludePaths": [
+    "**/test/**",
+    "**/*Test.cls",
+    "**/legacy/**"
+  ],
+  "maxViolationsPerFile": 50,
+  "metadataRoots": ["./force-app/main/default"],
+  "failOn": "high"
+}
+```
+
+| Field | CLI equivalent | Description |
+|-------|---------------|-------------|
+| `rules` | `--rules` | Run only these rule IDs — all others are skipped |
+| `excludeRules` | `--exclude-rules` | Skip these rule IDs (merged with CLI flag) |
+| `categories` | `--categories` | Run only rules in these categories |
+| `severityOverrides` | — | Override per-rule severity |
+| `excludePaths` | — | Glob patterns for files to skip (`*`, `**`, `?` supported) |
+| `maxViolationsPerFile` | — | Cap violations per file (useful on large legacy codebases) |
+| `metadataRoots` | `--metadata-root` | sfdx project roots for SObject metadata |
+| `failOn` | `--fail-on` | Minimum severity for non-zero exit |
+
+**Precedence:** CLI flags override config file. `rules` (include list) takes priority over `excludeRules` and `categories`.
+
+See [`apexlint.config.example.json`](apexlint.config.example.json) for a fully annotated starter config.
+
+---
+
+## Suppression
+
+Suppress findings inline without touching config — compatible with PMD suppression syntax so existing suppressions migrate as-is.
+
+```apex
+// Suppress all rules on this line
+doSomething(); // NOPMD
+
+// Suppress one specific rule on this line
+[SELECT Id FROM Account]; // NOPMD: SoqlInLoop
+
+// Suppress a rule for an entire method or class
+@SuppressWarnings('PMD.SoqlInLoop')
+public void myMethod() { ... }
+
+// Suppress all rules for a class
+@SuppressWarnings('PMD')
+public class LegacyHelper { ... }
+```
+
+Suppressed violations are counted separately and shown in the summary line (`N suppressed`) so suppressions are transparent to reviewers.
+
+---
+
+## Rules
+
+41 built-in rules across 6 categories. See [docs/rules.md](docs/rules.md) for the full reference with examples and fixes.
+
+### Security (10)
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `ApexSOQLInjection` | **critical** | User-controlled input flows into `Database.query()` — taint-tracked |
+| `ApexOpenRedirect` | high | User-controlled URL flows into `PageReference` |
+| `ApexSSRF` | high | User-controlled URL flows into `HttpRequest.setEndpoint()` |
+| `ApexXSSFromURLParam` | high | Tainted data flows into `ApexPages.Message()` or `addError(…, false)` |
+| `ApexXSSFromEscapeFalse` | high | `addError(msg, false)` with non-literal message — escaping disabled |
+| `ApexBadCrypto` | high | Weak algorithm in `Crypto.*` call (MD5, SHA-1, HMAC-SHA1) |
+| `ApexSharingViolations` | high | Class performs SOQL/DML without explicit sharing declaration |
+| `DatabaseQueryWithVariable` | high | `Database.query()` with non-literal argument |
+| `UnguardedCrudOperation` ★ | high | DML without CRUD/FLS check |
+| `ApexCSRF` | moderate | DML in a constructor runs on every GET request |
+
+★ type-aware (uses MetadataProvider — needs `--metadata-root`)
+
+### Performance (6)
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `SoqlInLoop` | high | SOQL inside a for/while/do loop |
+| `DmlInLoop` | high | DML inside a loop |
+| `HttpCalloutInLoop` | high | HTTP callout inside a loop |
+| `SoqlInBatchExecute` | moderate | Batch `execute()` SOQL not bound to `scope` parameter |
+| `AvoidNonRestrictiveQueries` | low | SOQL without a WHERE clause |
+| `SystemDebugInLoop` | low | `System.debug()` inside a loop |
+
+### Error-Prone (6)
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `InaccessibleAuraEnabledGetter` | high | `@AuraEnabled` member without public/global access |
+| `TestMethodsMustBeInTestClasses` | high | `@IsTest` method in a non-`@IsTest` class — never runs |
+| `FutureMethodChaining` | high | `@future` calling another `@future` — runtime exception |
+| `EmptyCatchBlock` | moderate | Empty catch block silently swallows exceptions |
+| `OverrideBothEqualsAndHashcode` | moderate | `equals()` without `hashCode()` breaks Map/Set |
+| `AvoidHardcodedId` | moderate | Hardcoded 15/18-char Salesforce record ID |
+
+### Design (8)
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `TriggerInlineLogic` | moderate | SOQL/DML directly in trigger body |
+| `CyclomaticComplexity` | moderate | Method complexity > 10 |
+| `CognitiveComplexity` | moderate | Weighted nesting complexity > 15 |
+| `AvoidDeeplyNestedIfStmts` | moderate | Nesting depth > 4 |
+| `ExcessiveParameterList` | low | Method with > 5 parameters |
+| `ExcessivePublicCount` | low | Class with > 45 public members |
+| `TooManyFields` | low | Class with > 15 fields |
+| `UnusedPrivateMethod` | low | Private method never called within the class |
+
+### Best Practices (10)
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `TestWithoutAsserts` | moderate | Test method with no assertion calls |
+| `SeeAllDataTrue` | moderate | `@IsTest(SeeAllData=true)` uses live org data |
+| `HardcodedUrl` | moderate | `http://` or `https://` URL in a string literal |
+| `QueueableWithoutFinalizer` | low | Queueable with no `System.attachFinalizer()` |
+| `AvoidGlobalModifier` | low | `global` class — cannot be deleted once packaged |
+| `AvoidFutureAnnotation` | low | `@future` — prefer Queueable for new async code |
+| `DebugsShouldUseLoggingLevel` | low | `System.debug()` without a `LoggingLevel` argument |
+| `ApexAssertionsShouldIncludeMessage` | low | Test assertion without a failure message |
+| `ApexUnitTestMethodShouldHaveIsTestAnnotation` | low | Deprecated `testMethod` keyword |
+| `ApexUnitTestClassShouldHaveRunAs` | low | Test class with no `System.runAs()` call |
+
+### Code Style (1)
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `MethodNamingConventions` | low | Method names should be camelCase |
+
+---
+
+## Architecture
 
 ```
 apex-core
-  ast/parser.ts          wraps @apexdevtools/apex-parser — the ONLY file that
-                         touches the parser package (pin/upgrade in one place)
-  ast/walk.ts            traversal + helpers (isInsideLoop, enclosingMethod, …)
-  engine/types.ts        Rule / RuleContext / Violation contracts
-  engine/engine.ts       Linter: ONE tree-walk dispatches all rules (ESLint model)
-  metadata/provider.ts   MetadataProvider interface  ← the seam
-  metadata/filesystem-provider.ts   reads sfdx objects/ from disk (CLI/CI)
-  metadata/org-provider.ts          jsforce-backed live describe (AlgoScope)  [stub]
-  rules/*.ts             one file per rule area
+  ast/parser.ts              wraps @apexdevtools/apex-parser (the only file that touches it)
+  ast/walk.ts                traversal helpers — isInsideLoop, enclosingMethod, walk, …
+  engine/types.ts            Rule / RuleContext / Violation contracts
+  engine/engine.ts           Linter: one tree-walk dispatches all rules (ESLint model)
+  engine/suppression.ts      buildSuppressions() — // NOPMD and @SuppressWarnings('PMD')
+  metadata/provider.ts       MetadataProvider interface  ← the seam
+  metadata/filesystem-provider.ts   reads sfdx objects/ from disk
+  rules/security.ts          taint analysis engine + security rules
+  rules/performance.ts       loop-based governor limit rules
+  rules/design.ts            complexity, dead code, structural rules
+  rules/style.ts             testing, naming, best-practice rules
+  rules/loops.ts             SOQL/DML-in-loop
+  rules/crud.ts              unguarded CRUD operations
+  rules/async.ts             @future / Queueable rules
 ```
 
-Two design decisions worth knowing:
+**Key design decisions:**
 
-**1. The parser is wrapped, never imported directly by rules.** The Apex grammar
-gains new syntax a few times a year. When it does, only `ast/parser.ts` moves;
-every rule keeps working against our own AST helpers.
+1. **Parser is wrapped, never imported by rules.** When the Apex grammar gains new syntax, only `ast/parser.ts` moves. Every rule keeps working.
 
-**2. Type-aware rules depend on a `MetadataProvider`, not on an org.** The same
-`UnguardedCrudOperation` rule runs in CI (filesystem provider reads
-`objects/**`) and inside AlgoScope (jsforce provider describes the live org).
-The rule doesn't know which. With **no** provider it degrades silently rather
-than firing false positives — see below.
+2. **Type-aware rules depend on `MetadataProvider`, not on an org.** `UnguardedCrudOperation` runs identically in CI (filesystem) and embedded in an app (live org). With no provider it degrades silently rather than firing false positives.
 
----
-
-## The metadata seam, demonstrated
-
-`UnguardedCrudOperation` only fires when the provider confirms the DML target is
-a real SObject:
-
-```bash
-# no metadata → CRUD rule stays silent (avoids false positives)
-# filesystem metadata knows "Account" → CRUD violations appear
-pnpm demo
-```
-
-In the fixture, the rule flags the unguarded `delete acc` and
-`insert new Account()` but **not** the `insert a` that sits behind a
-`Schema.sObjectType.Account.isCreateable()` check.
-
-> ⚠️ The CRUD rule is a **phase-1 heuristic** ("is there a guard token anywhere
-> in the method?"), not full dataflow. Replacing that check with proper
-> def-use / reaching-definitions analysis is the phase-2 work — it plugs in
-> behind the same rule + provider interfaces. See Roadmap.
+3. **Taint analysis for security rules.** `ApexSOQLInjection`, `ApexOpenRedirect`, `ApexSSRF`, and `ApexXSSFromURLParam` use PMD-style intra-method forward propagation — variables seeded from VF params, REST request body, or cookies are tracked through assignment chains to injection sinks. No false positives from safe internal variables.
 
 ---
 
 ## Adding a rule
-
-A rule is an object returning a listener keyed by parse-tree context type. The
-engine does the walking; you handle the nodes you care about.
 
 ```ts
 import type { Rule } from "../engine/types.js";
@@ -109,68 +264,27 @@ export const myRule: Rule = {
   description: "One-line description shown in --list-rules.",
   create(ctx) {
     return {
-      // key = the ANTLR context constructor name
       QueryContext: (node) => {
-        if (isInsideLoop(node)) ctx.report(node, "Don't do that here.");
+        if (isInsideLoop(node)) ctx.report(node, "SOQL inside a loop hits governor limits.");
       },
     };
   },
 };
 ```
 
-Register it in `rules/index.ts`. To discover which context type a construct
-parses to, walk a sample and print `node.constructor.name` (see how the existing
-rules were authored).
-
----
-
-## Configuration
-
-`apexlint.config.json` (or `.apexlintrc.json`) in the working directory, or pass
-`--config <file>`:
-
-```json
-{
-  "disabledRules": ["MethodNamingConventions"],
-  "severityOverrides": { "AvoidHardcodedId": "critical" },
-  "metadataRoots": ["force-app"]
-}
-```
-
----
-
-## Built-in rules (v0.1)
-
-Syntactic tier (no metadata needed):
-`SoqlInLoop`, `DmlInLoop`, `EmptyCatchBlock`, `MethodNamingConventions`,
-`AvoidHardcodedId`.
-
-Type-aware tier (uses the metadata seam): `UnguardedCrudOperation`.
-
-These are a deliberately small, high-signal starter set. The point of the
-scaffold is the *engine and seams*, not rule count — adding the next 20
-syntactic rules is mechanical.
+Register in `rules/index.ts`. To discover which context type a construct produces, walk a sample file and print `node.constructor.name` — see existing rules for examples.
 
 ---
 
 ## Roadmap
 
-- **More syntactic rules** — the cheap, high-value batch (empty blocks, nested
-  loops, `Database.query` with variables, missing `@isTest` asserts, trigger
-  best practices, ApexDoc). Each is a short tree-walk.
-- **Suppression compatibility** — honor `// NOPMD` and
-  `@SuppressWarnings('PMD.RuleName')` so existing PMD users migrate cleanly.
-- **PMD ruleset import** — read an existing `ruleset.xml` and map rule
-  enable/severity onto our config.
-- **Baseline file** — snapshot current violations, fail only on *new* ones (the
-  big adoption feature for legacy orgs).
-- **Phase-2 security tier** — symbol table + def-use/taint analysis to make
-  `UnguardedCrudOperation` and a new `SoqlInjection` rule precise.
-- **Parallelism + cache** — worker_threads with a per-file hash cache for CI.
+- **PMD ruleset import** — read `ruleset.xml`, map rule enable/severity to apex-lint config.
+- **Baseline file** — snapshot current violations, fail only on *new* ones (key adoption feature for legacy orgs).
+- **Parallelism + cache** — worker_threads with per-file hash cache for large monorepos.
+- **Cross-method taint** — extend taint propagation beyond single methods using a per-class call graph.
 
 ---
 
 ## License
 
-BSD-3-Clause. Bundles the Apex ANTLR grammar via `@apexdevtools/apex-parser`
-(also BSD-3-Clause).
+BSD-3-Clause. Bundles the Apex ANTLR grammar via `@apexdevtools/apex-parser` (also BSD-3-Clause).
