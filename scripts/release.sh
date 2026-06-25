@@ -29,10 +29,6 @@ git diff --quiet && git diff --cached --quiet || fatal "Working tree is dirty �
 info "Pulling latest main…"
 git pull origin main --quiet
 
-# ── Sync CLI README to apex-lint-cli package ──────────────────────────────────
-
-cp README.md packages/apex-lint-cli/README.md
-
 # ── Bump all workspace package versions ───────────────────────────────────────
 
 info "Bumping version ($BUMP)…"
@@ -44,7 +40,6 @@ ok "New version: ${BOLD}v${VERSION}${RESET}"
 
 git add packages/apex-core/package.json \
         packages/apex-lint-cli/package.json \
-        packages/apex-lint-cli/README.md \
         packages/eslint-parser-apex/package.json \
         packages/eslint-plugin-apex/package.json
 git commit -m "chore: bump version to ${VERSION}" --quiet
