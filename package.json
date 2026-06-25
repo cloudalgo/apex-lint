@@ -1,0 +1,17 @@
+{
+  "name": "apex-lint-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure-Node, zero-JVM static analysis engine for Salesforce Apex",
+  "scripts": {
+    "build": "pnpm -r build",
+    "lint:self": "tsx packages/apex-lint-cli/src/cli.ts",
+    "demo": "tsx packages/apex-lint-cli/src/cli.ts fixtures/sample-project --format pretty"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "@types/node": "^22.0.0"
+  },
+  "packageManager": "pnpm@11.9.0"
+}

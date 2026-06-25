@@ -1,0 +1,17 @@
+{
+  "name": "@cloudalgo/apex-lint",
+  "version": "0.1.0",
+  "description": "Zero-JVM Apex linter CLI — pure Node static analysis for Salesforce",
+  "type": "module",
+  "bin": {
+    "apex-lint": "dist/cli.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cloudalgo/apex-core": "workspace:*"
+  },
+  "license": "BSD-3-Clause"
+}

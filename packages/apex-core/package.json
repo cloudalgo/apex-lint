@@ -1,0 +1,19 @@
+{
+  "name": "@cloudalgo/apex-core",
+  "version": "0.1.0",
+  "description": "Pure-Node Apex static-analysis engine (parser wrapper, rule engine, rule catalog, metadata providers)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@apexdevtools/apex-parser": "^5.0.0"
+  },
+  "license": "BSD-3-Clause"
+}
