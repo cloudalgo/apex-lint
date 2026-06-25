@@ -1,6 +1,6 @@
 {
   "name": "@cloudalgo/apex-lint",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Zero-JVM Apex linter CLI — pure Node static analysis for Salesforce",
   "type": "module",
   "bin": {
