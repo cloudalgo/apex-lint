@@ -57,24 +57,36 @@ Summary and progress always go to **stderr**; violation output goes to `--output
 
 ## Configuration
 
-Place `apexlint.config.json` in your project root — auto-discovered from the current directory and each scanned path.
+Place `apexlint.config.json` (or `.apexlintrc.json`) in your project root — auto-discovered from the current directory and each scanned path. Pass an explicit path with `--config`.
 
 ```json
 {
   "rules": ["SoqlInLoop", "DmlInLoop", "ApexSOQLInjection"],
-  "excludeRules": ["MethodNamingConventions"],
+  "excludeRules": ["MethodNamingConventions", "AvoidGlobalModifier"],
   "categories": ["security", "performance"],
   "severityOverrides": {
-    "EmptyCatchBlock": "critical"
+    "EmptyCatchBlock": "critical",
+    "AvoidNonRestrictiveQueries": "info"
   },
-  "excludePaths": ["**/test/**", "**/*Test.cls"],
+  "excludePaths": ["**/test/**", "**/*Test.cls", "**/legacy/**"],
   "maxViolationsPerFile": 50,
   "metadataRoots": ["./force-app/main/default"],
   "failOn": "high"
 }
 ```
 
-CLI flags override config. `rules` (include list) takes priority over `excludeRules` and `categories`.
+| Field | CLI equivalent | Description |
+|-------|---------------|-------------|
+| `rules` | `--rules` | Run ONLY these rule IDs — all others are skipped |
+| `excludeRules` | `--exclude-rules` | Skip these rule IDs (merged with CLI flag) |
+| `categories` | `--categories` | Run only rules in these categories |
+| `severityOverrides` | — | Override per-rule severity |
+| `excludePaths` | — | Glob patterns for files to skip (`*`, `**`, `?` supported) |
+| `maxViolationsPerFile` | — | Cap violations per file (useful on large legacy codebases) |
+| `metadataRoots` | `--metadata-root` | sfdx project roots for SObject metadata |
+| `failOn` | `--fail-on` | Minimum severity for non-zero exit |
+
+**Precedence:** CLI flags override config. `rules` takes priority over `excludeRules` and `categories`.
 
 ---
 

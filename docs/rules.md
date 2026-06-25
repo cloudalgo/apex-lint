@@ -4,7 +4,7 @@
 
 ---
 
-## Security (9 rules)
+## Security (10 rules)
 
 ### ApexSOQLInjection
 **Severity:** critical | **ID:** `ApexSOQLInjection`
@@ -155,6 +155,30 @@ List<SObject> recs = Database.query(soql);
 ```
 
 **Fix:** Prefer inline SOQL with bind variables. If dynamic object names are required, validate against `Schema.getGlobalDescribe().keySet()`.
+
+---
+
+### UnguardedCrudOperation ★
+**Severity:** high | **ID:** `UnguardedCrudOperation`
+
+DML operation (`insert`, `update`, `delete`, `upsert`, `undelete`) performed without a preceding CRUD/FLS check (`Schema.sObjectType.*.isCreateable()` / `isUpdateable()` / `isDeletable()`). Fails at runtime when executed by a user who lacks the required object permission.
+
+★ Type-aware — requires `--metadata-root` to identify custom SObjects. Without metadata, fires only on standard objects.
+
+**Triggers on:**
+```apex
+public void createRecord(Account a) {
+    insert a;  // no CRUD check
+}
+```
+
+**Fix:** Check `Schema.sObjectType.Account.isCreateable()` before DML, or use `with sharing` and the Security class:
+```apex
+if (!Schema.sObjectType.Account.isCreateable()) {
+    throw new SecurityException('Insufficient privileges');
+}
+insert a;
+```
 
 ---
 

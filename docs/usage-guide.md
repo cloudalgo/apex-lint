@@ -156,24 +156,36 @@ Without `--metadata-root`, the CRUD rule stays silent rather than fire false pos
 
 ## Configuration file
 
-Create `apexlint.config.json` in the directory where you run the CLI:
+Create `apexlint.config.json` (or `.apexlintrc.json`) in the directory where you run the CLI:
 
 ```json
 {
-  "disabledRules": ["MethodNamingConventions", "SystemDebugInLoop"],
+  "rules": ["SoqlInLoop", "DmlInLoop", "ApexSOQLInjection"],
+  "excludeRules": ["MethodNamingConventions", "SystemDebugInLoop"],
+  "categories": ["security", "performance"],
   "severityOverrides": {
     "SoqlInLoop": "critical",
     "AvoidHardcodedId": "high"
   },
-  "metadataRoots": ["force-app/main/default"]
+  "excludePaths": ["**/*Test.cls", "**/legacy/**"],
+  "maxViolationsPerFile": 50,
+  "metadataRoots": ["force-app/main/default"],
+  "failOn": "high"
 }
 ```
 
-| Field | Type | Purpose |
+| Field | CLI equivalent | Purpose |
 |---|---|---|
-| `disabledRules` | `string[]` | Rules to skip entirely |
-| `severityOverrides` | `Record<ruleId, severity>` | Override default severity for a rule |
-| `metadataRoots` | `string[]` | Same as `--metadata-root`, resolved relative to config file |
+| `rules` | `--rules` | Run ONLY these rule IDs (all others skipped) |
+| `excludeRules` | `--exclude-rules` | Skip these rule IDs (merged with CLI flag) |
+| `categories` | `--categories` | Run only rules in these categories |
+| `severityOverrides` | — | Override default severity per rule |
+| `excludePaths` | — | Glob patterns for files to skip |
+| `maxViolationsPerFile` | — | Cap violations per file |
+| `metadataRoots` | `--metadata-root` | sfdx roots for SObject metadata |
+| `failOn` | `--fail-on` | Minimum severity for non-zero exit |
+
+**Precedence:** CLI flags override config. `rules` takes priority over `excludeRules` and `categories`.
 
 Pass a custom path with `--config`:
 
@@ -283,18 +295,31 @@ npm install @cloudalgo/apex-core
 ```ts
 import { Linter, allRules, FilesystemMetadataProvider } from '@cloudalgo/apex-core';
 
-const metadata = new FilesystemMetadataProvider(['force-app/main/default']);
+// Object form — source + options in one bag (recommended)
 const linter = new Linter(allRules);
 
-const result = linter.lint(apexSource, { filePath: 'MyClass.cls', metadata });
+const result = linter.lint({
+  filePath: 'MyClass.cls',
+  source: apexSource,
+  metadata: new FilesystemMetadataProvider(['force-app/main/default']),
+});
 
-console.log(result.violations);   // Violation[]
-console.log(result.suppressedCount);
-console.log(result.syntaxErrors);
+console.log(result.violations);      // Violation[]
+console.log(result.suppressedCount); // number of // NOPMD suppressions
+console.log(result.syntaxErrors);    // parse errors (usually empty)
+```
+
+Or the positional form — `lint(source, opts)` — works identically:
+
+```ts
+const metadata = new FilesystemMetadataProvider(['force-app/main/default']);
+const result = linter.lint(apexSource, { filePath: 'MyClass.cls', metadata });
 ```
 
 Supply your own `MetadataProvider` to point the engine at a live org via jsforce
 instead of the filesystem — the rules don't know the difference.
+
+See the full API reference at [npmjs.com/@cloudalgo/apex-core](https://www.npmjs.com/package/@cloudalgo/apex-core).
 
 ---
 
