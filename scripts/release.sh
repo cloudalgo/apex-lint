@@ -29,9 +29,8 @@ git diff --quiet && git diff --cached --quiet || fatal "Working tree is dirty �
 info "Pulling latest main…"
 git pull origin main --quiet
 
-# ── Sync README to each package ───────────────────────────────────────────────
+# ── Sync CLI README to apex-lint-cli package ──────────────────────────────────
 
-cp README.md packages/apex-core/README.md
 cp README.md packages/apex-lint-cli/README.md
 
 # ── Bump all workspace package versions ───────────────────────────────────────
@@ -44,7 +43,6 @@ ok "New version: ${BOLD}v${VERSION}${RESET}"
 # ── Commit + tag ──────────────────────────────────────────────────────────────
 
 git add packages/apex-core/package.json \
-        packages/apex-core/README.md \
         packages/apex-lint-cli/package.json \
         packages/apex-lint-cli/README.md \
         packages/eslint-parser-apex/package.json \
