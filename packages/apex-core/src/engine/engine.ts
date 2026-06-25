@@ -17,6 +17,11 @@ export interface LintOptions {
   disabled?: Set<string>;
 }
 
+/** Object form accepted by lint() — source code plus options in one bag. */
+export interface LintFile extends LintOptions {
+  source: string;
+}
+
 export interface LintResult {
   filePath: string;
   violations: Violation[];
@@ -32,10 +37,12 @@ export interface LintResult {
 export class Linter {
   constructor(private readonly rules: Rule[]) {}
 
-  lint(source: string, opts: LintOptions = {}): LintResult {
-    const filePath = opts.filePath ?? "<input>";
-    const metadata = opts.metadata ?? new NullMetadataProvider();
-    const disabled = opts.disabled ?? new Set<string>();
+  lint(sourceOrFile: string | LintFile, opts: LintOptions = {}): LintResult {
+    const source = typeof sourceOrFile === "string" ? sourceOrFile : sourceOrFile.source;
+    const merged = typeof sourceOrFile === "string" ? opts : sourceOrFile;
+    const filePath = merged.filePath ?? "<input>";
+    const metadata = merged.metadata ?? new NullMetadataProvider();
+    const disabled = merged.disabled ?? new Set<string>();
     const violations: Violation[] = [];
 
     const { tree, syntaxErrors } = parseApex(source);

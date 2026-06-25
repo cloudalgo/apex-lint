@@ -1,6 +1,6 @@
 // Engine
 export { Linter } from "./engine/engine.js";
-export type { LintOptions, LintResult } from "./engine/engine.js";
+export type { LintOptions, LintFile, LintResult } from "./engine/engine.js";
 export type {
   Rule,
   RuleContext,

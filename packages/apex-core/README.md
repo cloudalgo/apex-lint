@@ -51,10 +51,12 @@ Creates a linter instance pre-loaded with the given rules. Reuse across files â€
 
 ### `linter.lint(file: LintFile): LintResult`
 
+Also accepts `lint(source: string, opts?: LintOptions)` for the positional form.
+
 ```ts
 interface LintFile {
-  filePath: string;            // used in violation output + for .trigger detection
   source: string;              // Apex source text
+  filePath?: string;           // used in violation output + for .trigger detection
   metadata?: MetadataProvider; // optional â€” enables type-aware rules
 }
 
@@ -62,7 +64,7 @@ interface LintResult {
   filePath: string;
   violations: Violation[];
   suppressedCount: number;     // violations suppressed by // NOPMD or @SuppressWarnings
-  parseError?: string;         // set if the file failed to parse
+  syntaxErrors: { line: number; column: number; message: string }[];
 }
 
 interface Violation {
@@ -70,8 +72,10 @@ interface Violation {
   severity: "critical" | "high" | "moderate" | "low" | "info";
   line: number;
   column?: number;
+  endLine?: number;
   message: string;
   category: string;
+  file: string;
 }
 ```
 
