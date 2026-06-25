@@ -1,6 +1,6 @@
 {
   "name": "@cloudalgo/apex-core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pure-Node Apex static-analysis engine (parser wrapper, rule engine, rule catalog, metadata providers)",
   "type": "module",
   "main": "dist/index.js",
@@ -8,7 +8,9 @@
   "exports": {
     ".": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
@@ -16,10 +18,25 @@
     "@apexdevtools/apex-parser": "^5.0.0"
   },
   "license": "BSD-3-Clause",
-  "repository": { "type": "git", "url": "https://github.com/cloudalgo/apex-lint" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloudalgo/apex-lint"
+  },
   "homepage": "https://github.com/cloudalgo/apex-lint#readme",
-  "bugs": { "url": "https://github.com/cloudalgo/apex-lint/issues" },
-  "keywords": ["salesforce", "apex", "lint", "static-analysis", "pmd"],
-  "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" }
+  "bugs": {
+    "url": "https://github.com/cloudalgo/apex-lint/issues"
+  },
+  "keywords": [
+    "salesforce",
+    "apex",
+    "lint",
+    "static-analysis",
+    "pmd"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

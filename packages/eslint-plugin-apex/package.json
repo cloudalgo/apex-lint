@@ -1,6 +1,6 @@
 {
   "name": "@cloudalgo/eslint-plugin-apex",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "ESLint plugin for Salesforce Apex — 15 rules for SOQL injection, governor limits, security and code quality",
   "type": "module",
   "main": "dist/index.js",
@@ -8,7 +8,9 @@
   "exports": {
     ".": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
@@ -20,10 +22,26 @@
     "eslint": ">=8.0.0"
   },
   "license": "BSD-3-Clause",
-  "repository": { "type": "git", "url": "https://github.com/cloudalgo/apex-lint" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloudalgo/apex-lint"
+  },
   "homepage": "https://github.com/cloudalgo/apex-lint#readme",
-  "bugs": { "url": "https://github.com/cloudalgo/apex-lint/issues" },
-  "keywords": ["salesforce", "apex", "eslint", "eslint-plugin", "lint", "static-analysis"],
-  "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" }
+  "bugs": {
+    "url": "https://github.com/cloudalgo/apex-lint/issues"
+  },
+  "keywords": [
+    "salesforce",
+    "apex",
+    "eslint",
+    "eslint-plugin",
+    "lint",
+    "static-analysis"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
