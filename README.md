@@ -2,10 +2,10 @@
 
 Zero-JVM static analysis for Salesforce Apex. No Java, no apex-jorje, no Code Analyzer plugin — parses Apex with the same ANTLR grammar PMD 7 uses (`@apexdevtools/apex-parser`), runs 41 built-in rules against the parse tree, and emits findings as pretty text, JSON, or SARIF.
 
-| Package | Description |
-|---------|-------------|
-| `@cloudalgo/apex-core` | Engine: parser, rule dispatcher, rule catalog, metadata providers. Embeds in any Node app. |
-| `@cloudalgo/apex-lint` | CLI: file discovery, config, reporters, exit codes. |
+| Package | npm | Description |
+|---------|-----|-------------|
+| `@cloudalgo/apex-core` | [![npm](https://img.shields.io/npm/v/@cloudalgo/apex-core)](https://www.npmjs.com/package/@cloudalgo/apex-core) | Engine: parser, rule dispatcher, rule catalog, metadata providers. Embeds in any Node app. |
+| `@cloudalgo/apex-lint` | [![npm](https://img.shields.io/npm/v/@cloudalgo/apex-lint)](https://www.npmjs.com/package/@cloudalgo/apex-lint) | CLI: file discovery, config, reporters, exit codes. |
 
 ---
 
