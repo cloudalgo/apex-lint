@@ -2,10 +2,63 @@
 
 Zero-JVM static analysis for Salesforce Apex. No Java, no apex-jorje, no Code Analyzer plugin — parses Apex with the same ANTLR grammar PMD 7 uses (`@apexdevtools/apex-parser`), runs 41 built-in rules against the parse tree, and emits findings as pretty text, JSON, or SARIF.
 
-| Package | npm | Description |
-|---------|-----|-------------|
-| `@cloudalgo/apex-core` | [![npm](https://img.shields.io/npm/v/@cloudalgo/apex-core)](https://www.npmjs.com/package/@cloudalgo/apex-core) | Engine: parser, rule dispatcher, rule catalog, metadata providers. Embeds in any Node app. |
-| `@cloudalgo/apex-lint` | [![npm](https://img.shields.io/npm/v/@cloudalgo/apex-lint)](https://www.npmjs.com/package/@cloudalgo/apex-lint) | CLI: file discovery, config, reporters, exit codes. |
+---
+
+## Packages
+
+### [@cloudalgo/apex-lint](packages/apex-lint-cli/README.md) — CLI
+
+[![npm](https://img.shields.io/npm/v/@cloudalgo/apex-lint)](https://www.npmjs.com/package/@cloudalgo/apex-lint)
+
+The command-line linter. Install globally and run against any sfdx project. Supports `pretty`, `json`, and `sarif` output, config file auto-discovery, rule/category filtering, and PMD-compatible suppression.
+
+```bash
+npm install -g @cloudalgo/apex-lint
+apex-lint force-app/
+```
+
+→ [Full CLI README](packages/apex-lint-cli/README.md) · [npm](https://www.npmjs.com/package/@cloudalgo/apex-lint)
+
+---
+
+### [@cloudalgo/apex-core](packages/apex-core/README.md) — Engine
+
+[![npm](https://img.shields.io/npm/v/@cloudalgo/apex-core)](https://www.npmjs.com/package/@cloudalgo/apex-core)
+
+The embeddable static analysis engine. Exposes a `Linter` class you can call from any Node ≥ 20 application — editors, CI bots, VS Code extensions, build pipelines. The CLI and ESLint plugin are both built on top of this package.
+
+```ts
+import { Linter, allRules } from "@cloudalgo/apex-core";
+const result = new Linter(allRules).lint({ filePath: "MyClass.cls", source });
+```
+
+→ [Full engine README](packages/apex-core/README.md) · [npm](https://www.npmjs.com/package/@cloudalgo/apex-core)
+
+---
+
+### [@cloudalgo/eslint-plugin-apex](packages/eslint-plugin-apex/README.md) — ESLint plugin
+
+[![npm](https://img.shields.io/npm/v/@cloudalgo/eslint-plugin-apex)](https://www.npmjs.com/package/@cloudalgo/eslint-plugin-apex)
+
+ESLint plugin that brings all 41 Apex rules into standard ESLint tooling. Works with ESLint v8 (legacy `.eslintrc`) and v9 (flat config). Enables inline `// eslint-disable` suppression and VS Code integration via the ESLint extension.
+
+```js
+// eslint.config.js (ESLint v9)
+import apex from "@cloudalgo/eslint-plugin-apex";
+export default [...apex.flatConfigs.recommended];
+```
+
+→ [Full plugin README](packages/eslint-plugin-apex/README.md) · [npm](https://www.npmjs.com/package/@cloudalgo/eslint-plugin-apex)
+
+---
+
+### [@cloudalgo/eslint-parser-apex](packages/eslint-parser-apex/README.md) — ESLint parser
+
+[![npm](https://img.shields.io/npm/v/@cloudalgo/eslint-parser-apex)](https://www.npmjs.com/package/@cloudalgo/eslint-parser-apex)
+
+The custom ESLint parser that bridges `@apexdevtools/apex-parser` into an ESTree-compatible AST. Bundled inside `eslint-plugin-apex` — only install this separately if you want to write your own ESLint rules for Apex.
+
+→ [Full parser README](packages/eslint-parser-apex/README.md) · [npm](https://www.npmjs.com/package/@cloudalgo/eslint-parser-apex)
 
 ---
 
