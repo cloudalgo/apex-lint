@@ -1,0 +1,58 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+# Minimal permissions — only read source, write nothing
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      # Pass tag through env var — never interpolate github context directly in run:
+      - name: Extract and validate version from release tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid semver tag: $TAG — expected vX.Y.Z"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # Set all workspace packages to the release version before publishing.
+      # pnpm replaces workspace:* deps with the real version automatically.
+      - name: Set package versions
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: pnpm -r exec -- npm version "$VERSION" --no-git-tag-version
+
+      - name: Publish all packages
+        run: pnpm publish -r --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
