@@ -14,6 +14,7 @@ import { loadConfig, type ApexLintConfig } from "./config.js";
 import { discoverApexFiles } from "./discover.js";
 import { reportPretty, reportJson } from "./reporters/text.js";
 import { reportSarif } from "./reporters/sarif.js";
+import { ProgressBar } from "./progress.js";
 
 const SEV_RANK: Record<Severity, number> = {
   critical: 5,
@@ -215,6 +216,7 @@ function main(): void {
   const all: Violation[] = [];
   const syntaxProblems: string[] = [];
   let totalSuppressed = 0;
+  const bar = new ProgressBar(files.length);
 
   for (const file of files) {
     let src: string;
@@ -232,7 +234,10 @@ function main(): void {
     for (const e of result.syntaxErrors) {
       syntaxProblems.push(`${file}:${e.line}:${e.column} parse error: ${e.message}`);
     }
+    bar.tick(file, all.length);
   }
+
+  bar.done();
 
   // Output
   const emit = args.outputPath
