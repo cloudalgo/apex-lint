@@ -21,8 +21,33 @@ export interface SyntaxError {
   message: string;
 }
 
-// Allow leading line comments before the trigger keyword (common in real orgs)
-const TRIGGER_RE = /^\s*(?:\/\/[^\n]*\n\s*)*trigger\b/i;
+/**
+ * Returns true if `source` is a trigger file by finding the first non-comment,
+ * non-whitespace token and checking whether it is `trigger`. Uses a sequential
+ * scanner rather than a regex to avoid backtracking issues where the word
+ * "trigger" inside a comment body can leak out and match the final \btrigger\b.
+ */
+function isTriggerSource(source: string): boolean {
+  let i = 0;
+  const len = source.length;
+  while (i < len) {
+    const ch = source[i];
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") { i++; continue; }
+    if (ch === "/" && source[i + 1] === "/") {
+      i += 2;
+      while (i < len && source[i] !== "\n") i++;
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      i += 2;
+      while (i < len && !(source[i] === "*" && source[i + 1] === "/")) i++;
+      i = Math.min(i + 2, len);
+      continue;
+    }
+    return /^trigger\b/i.test(source.slice(i));
+  }
+  return false;
+}
 
 /**
  * Parse an Apex class or trigger. Inline SOQL/SOSL is parsed into the same
@@ -50,7 +75,7 @@ export function parseApex(source: string): ParsedUnit {
     reportContextSensitivity: () => {},
   } as any);
 
-  const tree = TRIGGER_RE.test(source)
+  const tree = isTriggerSource(source)
     ? parser.triggerUnit()
     : parser.compilationUnit();
 
