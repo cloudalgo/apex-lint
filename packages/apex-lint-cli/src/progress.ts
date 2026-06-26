@@ -24,10 +24,10 @@ export function renderBar(
   const base = `scanning  [${bar}] ${String(pct).padStart(3)}%  ${current}/${total}  ·  ${violStr} violations`;
   const withFile = `${base}  ·  ${file}`;
 
-  if (withFile.length <= cols) return withFile;
+  if (withFile.length <= cols - 2) return withFile;
 
   // Try truncating the filename to fit
-  const budget = cols - base.length - 5; // "  ·  " is 5 chars
+  const budget = cols - 2 - base.length - 5; // "  ·  " is 5 chars
   if (budget >= 2) {
     const trimmed = '…' + file.slice(-(budget - 1));
     return `${base}  ·  ${trimmed}`;

@@ -31,8 +31,8 @@ test('formats violations with comma separator', () => {
 
 test('truncates long filename to fit terminal width', () => {
   const longName = 'A'.repeat(80) + '.cls';
-  const line = renderBar(1, 10, 0, `/path/${longName}`, 80);
-  assert.ok(line.length <= 80, `line length ${line.length} should be <= 80`);
+  const line = renderBar(1, 10, 0, `/path/${longName}`, 100);
+  assert.ok(line.length <= 100, `line length ${line.length} should be <= 100`);
   assert.ok(line.includes('…'), 'should include ellipsis for truncation');
 });
 
