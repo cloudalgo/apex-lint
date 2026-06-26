@@ -4,6 +4,47 @@ All notable changes to apex-lint are documented here.
 
 ---
 
+## [0.1.16] — 2026-06-26
+
+### Fixed
+
+- **`EmptyCatchBlock` no longer fires on non-empty catch blocks.**
+  `block.statement()` always returned empty because ANTLR wraps catch body children
+  as `BlockStatement` nodes, not `Statement` nodes. Replaced with `block.getChildCount() <= 2`
+  (only `{` and `}` terminals = truly empty). Eliminated 1,301 false positives across 6
+  real-world Salesforce repos (fflib, NPSP, EDA, apex-recipes, Volunteers).
+
+- **`ApexSOQLInjection` no longer fires when a tainted variable is used as a SOQL bind variable.**
+  `hasWordRef` was matching field names inside string literals (e.g. `WHERE Id = :id` — the
+  field `Id` matched the tainted variable `id`). Fixed by stripping single-quoted string
+  literal contents from the `Database.query()` argument before taint-variable matching.
+  Eliminated 2 critical false positives in NPSP (`PMT_PaymentWizard_CTRL.cls`).
+
+- **`TestWithoutAsserts` now recognises the Spring '22 `System.Assert.*` namespace API.**
+  `System.Assert.areEqual()`, `System.Assert.isTrue()`, `System.Assert.isFalse()`, etc.
+  appear as `system.assert.areequal(` in the parse tree — not matching the existing
+  `system.assert(` or `assert.` checks. Added `system.assert.` prefix detection.
+  Eliminated 272 false positives in apex-recipes and other modern codebases.
+
+- **`TestWithoutAsserts` now recognises delegate assertion helpers.**
+  Test methods that call private helper methods named `assertXxx(...)` (e.g.
+  `assertCompareBoolean()`, `assertEqualsSelectFields()`) are no longer flagged.
+  Equivalent to PMD's `additionalAssertMethodPattern` built in by default.
+  Eliminated 137 false positives across NPSP, EDA, and Volunteers.
+
+- **`AvoidNonRestrictiveQueries` no longer flags SOQL queries that have a `LIMIT` clause.**
+  A `LIMIT` without a `WHERE` (e.g. `[SELECT Id FROM Account LIMIT 0]`) is bounded and
+  safe. PMD uses `\b(where|limit)\b` — we now match that behaviour. Eliminated 32 false
+  positives across NPSP, EDA, and apex-recipes.
+
+- **`HardcodedUrl` no longer fires inside `@IsTest` classes.**
+  Hardcoded mock callout URLs in test classes are standard Salesforce test practice
+  (`HttpCalloutMock`, `StaticResourceCalloutMock`). Aligned with PMD's
+  `ApexSuggestUsingNamedCred` which skips test classes. Eliminated 57 false positives
+  in EDA and NPSP test files.
+
+---
+
 ## [0.1.15] — 2026-06-26
 
 ### Fixed
