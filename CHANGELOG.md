@@ -6,6 +6,15 @@ All notable changes to apex-lint are documented here.
 
 ## [0.1.16] — 2026-06-26
 
+### Added
+
+- **CLI progress bar during scans.**
+  A zero-dependency TTY progress bar now renders while scanning large codebases.
+  Shows `[████░░░░] 42/100 files  SoqlInLoop ░░░` with the current file name,
+  clears cleanly on completion, and degrades gracefully when stdout is not a TTY
+  (CI, piped output) — no output in non-TTY mode. Guarded against `total=0`
+  edge cases.
+
 ### Fixed
 
 - **`EmptyCatchBlock` no longer fires on non-empty catch blocks.**
