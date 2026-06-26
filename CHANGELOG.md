@@ -4,6 +4,62 @@ All notable changes to apex-lint are documented here.
 
 ---
 
+## [0.1.14] — 2026-06-26
+
+### Fixed
+
+- **`@SuppressWarnings` now correctly scopes to the annotated method.**
+  Previously `ancestorOfType(node, "MethodDeclarationContext")` always returned
+  `undefined` because `MethodDeclarationContext` is a sibling of `ModifierContext`
+  inside `ClassBodyDeclarationContext`, not an ancestor. The annotation node's
+  ancestor chain is `Annotation → Modifier → ClassBodyDeclaration → ClassBody →
+  ClassDeclaration`. The fix walks the `ClassBodyDeclarationContext` for its
+  method sibling, so method-level suppressions now scope to the method rather
+  than silently falling back to class scope.
+
+- **`@SuppressWarnings` rule ID matching is now case-insensitive.**
+  The extracted rule ID was stored with the user's original casing, but the
+  engine compared with `===` against PascalCase IDs. Writing
+  `@SuppressWarnings('pmd.soqlinloop')` silently failed to suppress
+  `ApexSOQLInjection`. The rule ID is now lowercased on storage and compared
+  case-insensitively in the engine.
+
+- **`--fail-on` CLI flag now takes precedence over `failOn` in config.**
+  `args.failOn` was initialised to `"moderate"` (never `undefined`), so
+  `config.failOn ?? args.failOn` always resolved to the config value when a
+  config file was present — the CLI flag was silently ignored. The default is
+  now `undefined`; priority is CLI → config → `"moderate"`.
+
+- **`FutureMethodChaining` no longer loses the outer class's `@future` set when
+  walking inner classes.** The `ClassDeclarationContext` handler unconditionally
+  overwrote `futureMethods` on every class entry, including inner classes. The
+  set is now only re-collected when entering an outer (top-level) class.
+
+- **`ApexOpenRedirect` false-positive fallback removed.** A conservative branch
+  fired when `tainted.size === 0` (no taint sources found), flagging
+  `new PageReference(map.get("url"))` in clean methods. Only confirmed
+  taint-to-sink flows are now reported.
+
+- **`ApexBadCrypto` now catches `System.Crypto.*` fully-qualified calls.**
+  Previously only bare `Crypto.*` calls were matched.
+
+- **`UnusedPrivateMethod` no longer treats field accesses as call sites.**
+  `DotExpressionContext` covers both field reads (`account.Name`) and method
+  calls (`account.doThing()`). Field accesses were added to `calledNames`,
+  masking unused private methods whose name matched a field. The fix skips
+  dot expressions that contain no call parentheses.
+
+- **Glob exclude patterns are now fully anchored.** `compileGlob` produced
+  unanchored `RegExp` objects, allowing `**/*Test.cls` to match
+  `.cls.backup` as a substring. Patterns now have `^` and `$` anchors.
+
+- **CI smoke test no longer fails on expected violations.** The CI workflow now
+  passes `--fail-on critical` so the job only fails on crashes or genuine
+  critical findings, not on the moderate/low violations that exist in the
+  fixture project by design.
+
+---
+
 ## [0.1.13] — 2026-06-26
 
 ### Fixed
