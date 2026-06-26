@@ -32,7 +32,7 @@ function compileGlob(pattern: string): RegExp {
       i++;
     }
   }
-  return new RegExp(rx);
+  return new RegExp("^" + rx + "$");
 }
 
 /**

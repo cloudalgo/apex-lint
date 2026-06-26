@@ -26,7 +26,7 @@ const SEV_RANK: Record<Severity, number> = {
 interface Args {
   paths: string[];
   format: "pretty" | "json" | "sarif";
-  failOn: Severity;
+  failOn: Severity | undefined;
   configPath?: string;
   outputPath?: string;
   metadataRoots: string[];
@@ -44,7 +44,7 @@ function parseArgs(argv: string[]): Args {
   const args: Args = {
     paths: [],
     format: "pretty",
-    failOn: "moderate",
+    failOn: undefined,
     metadataRoots: [],
     listRules: false,
     help: false,
@@ -258,9 +258,9 @@ function main(): void {
   }
   if (args.outputPath) process.stderr.write(`Results written to ${args.outputPath}\n`);
 
-  // Exit code: config failOn < CLI --fail-on
-  const failOn = config.failOn ?? args.failOn;
-  const threshold = SEV_RANK[failOn as Severity] ?? SEV_RANK[args.failOn];
+  // Exit code: CLI --fail-on > config failOn > default "moderate"
+  const failOn = args.failOn ?? config.failOn ?? "moderate";
+  const threshold = SEV_RANK[failOn];
   const failing = all.some((v) => SEV_RANK[v.severity] >= threshold);
   process.exit(failing ? 1 : 0);
 }

@@ -242,8 +242,9 @@ export const unusedPrivateMethod: Rule = {
             const name = textOf(n).toLowerCase().split("(")[0];
             if (name) calledNames.add(name);
           } else if (t === "DotExpressionContext") {
-            const beforeParen = textOf(n).toLowerCase().split("(")[0];
-            const name = beforeParen.split(".").pop() ?? "";
+            const text = textOf(n).toLowerCase();
+            if (!text.includes("(")) return; // field access, not a method call
+            const name = text.split("(")[0].split(".").pop() ?? "";
             if (name) calledNames.add(name);
           }
         });

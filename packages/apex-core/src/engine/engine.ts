@@ -86,7 +86,7 @@ export class Linter {
           (s) =>
             v.line >= s.startLine &&
             v.line <= s.endLine &&
-            (s.ruleId === null || s.ruleId === v.ruleId),
+            (s.ruleId === null || s.ruleId === v.ruleId.toLowerCase()),
         ),
     );
     finalViolations.sort((a, b) => a.line - b.line || a.column - b.column);

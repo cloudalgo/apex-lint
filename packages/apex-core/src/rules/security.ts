@@ -193,7 +193,7 @@ export const apexBadCrypto: Rule = {
     return {
       DotExpressionContext: (node) => {
         const t = textOf(node).toLowerCase();
-        if (!t.startsWith("crypto.")) return;
+        if (!t.startsWith("crypto.") && !t.startsWith("system.crypto.")) return;
         for (const algo of WEAK) {
           if (t.includes(algo)) {
             ctx.report(node, `Insecure algorithm ${algo.toUpperCase()} in Crypto.* call — use SHA-256, AES-256, or HMAC-SHA256 instead.`);
@@ -364,20 +364,10 @@ export const apexOpenRedirect: Rule = {
         const argText = t.substring("newpagereference(".length);
         // Literal string arg is safe
         if (argText.startsWith("'")) return;
-        // Check if arg references a tainted variable
-        // If no tainted vars tracked, flag any non-literal (conservative fallback)
-        if (tainted.size > 0) {
-          for (const v of tainted) {
-            if (hasWordRef(argText, v)) {
-              ctx.report(n, `Tainted variable "${v}" from user-controlled input flows into PageReference — validate or whitelist the URL to prevent open redirect.`);
-              return;
-            }
-          }
-        } else {
-          // No taint sources in this method — conservative: flag non-literal non-static URLs
-          // Only flag if the arg looks like it could be user-controlled (contains 'get' or 'param')
-          if (argText.includes("get(") || argText.includes("param") || argText.includes("request")) {
-            ctx.report(n, "PageReference constructed from a potentially user-controlled URL — validate or whitelist the target to prevent open redirect.");
+        for (const v of tainted) {
+          if (hasWordRef(argText, v)) {
+            ctx.report(n, `Tainted variable "${v}" from user-controlled input flows into PageReference — validate or whitelist the URL to prevent open redirect.`);
+            return;
           }
         }
       });

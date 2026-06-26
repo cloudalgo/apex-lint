@@ -76,7 +76,11 @@ export const futureMethodChaining: Rule = {
 
     return {
       ClassDeclarationContext: (node) => {
-        futureMethods = collectFutureMethods(node);
+        // Only re-collect on the outermost class; inner classes cannot declare @future
+        // methods in Apex, and overwriting futureMethods would lose the outer set.
+        if (nodeType(node.parentCtx) === "TypeDeclarationContext") {
+          futureMethods = collectFutureMethods(node);
+        }
         currentIsFuture = false;
       },
       MethodDeclarationContext: (node) => {

@@ -1,5 +1,18 @@
 import { walk, nodeType, textOf, ancestorOfType } from "../ast/walk.js";
 
+/** Find the MethodDeclarationContext member of a ClassBodyDeclarationContext, if any. */
+function findMethodInDecl(classBodyDecl: any): any | undefined {
+  for (let i = 0; i < (classBodyDecl.getChildCount?.() ?? 0); i++) {
+    const member = classBodyDecl.getChild(i);
+    if (nodeType(member) !== "MemberDeclarationContext") continue;
+    for (let j = 0; j < (member.getChildCount?.() ?? 0); j++) {
+      const child = member.getChild(j);
+      if (nodeType(child) === "MethodDeclarationContext") return child;
+    }
+  }
+  return undefined;
+}
+
 interface Suppression {
   ruleId: string | null; // null = wildcard (suppress all rules)
   startLine: number;
@@ -34,14 +47,17 @@ export function buildSuppressions(source: string, tree: any): Suppression[] {
       if (lower === "pmd") {
         ruleId = null;
       } else if (lower.startsWith("pmd.")) {
-        ruleId = trimmed.slice(4);
+        ruleId = trimmed.slice(4).toLowerCase();
       } else {
         continue;
       }
 
-      const scope =
-        ancestorOfType(node, "MethodDeclarationContext") ??
-        ancestorOfType(node, "ClassDeclarationContext");
+      // AnnotationContext ancestor chain: Annotation → Modifier → ClassBodyDeclaration
+      // → ClassBody → ClassDeclaration. MethodDeclarationContext is a sibling of
+      // ModifierContext inside ClassBodyDeclaration, not an ancestor.
+      const classBodyDecl = ancestorOfType(node, "ClassBodyDeclarationContext");
+      const methodDecl = classBodyDecl ? findMethodInDecl(classBodyDecl) : undefined;
+      const scope = methodDecl ?? ancestorOfType(node, "ClassDeclarationContext");
       if (!scope) continue;
 
       suppressions.push({
