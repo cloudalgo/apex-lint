@@ -47,3 +47,10 @@ test('uses basename only, not full path', () => {
   assert.ok(line.includes('MyClass.cls'), 'should show basename');
   assert.ok(!line.includes('/very/long/path/to/'), 'should not show full path');
 });
+
+test('returns empty bar when total is zero', () => {
+  const line = renderBar(0, 0, 0, '/path/File.cls', 120);
+  assert.ok(line.includes('░'.repeat(32)), 'bar should be all empty');
+  assert.ok(line.includes('  0%'), 'should show 0%');
+  assert.ok(line.includes('0/0'), 'should show 0/0');
+});

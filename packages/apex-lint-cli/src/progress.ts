@@ -15,6 +15,10 @@ export function renderBar(
   filePath: string,
   cols: number = process.stderr.columns ?? 120,
 ): string {
+  if (total === 0) {
+    return `scanning  [${'░'.repeat(BAR_WIDTH)}]   0%  0/0  ·  0 violations`;
+  }
+
   const pct = Math.floor((current / total) * 100);
   const filled = Math.round((current / total) * BAR_WIDTH);
   const bar = FILLED.repeat(filled) + EMPTY.repeat(BAR_WIDTH - filled);
