@@ -12,9 +12,10 @@ export const emptyCatchBlock: Rule = {
       CatchClauseContext: (node) => {
         const block = node.block ? node.block() : null;
         if (!block) return;
-        let stmts = block.statement ? block.statement() : [];
-        if (stmts && !Array.isArray(stmts)) stmts = [stmts];
-        if (!stmts || stmts.length === 0) {
+        // child count ≤ 2 means only the '{' and '}' terminals — truly empty.
+        // block.statement() is wrong: ANTLR wraps children as BlockStatement nodes,
+        // not Statement nodes, so it returns empty even for non-empty blocks.
+        if ((block.getChildCount?.() ?? 0) <= 2) {
           ctx.report(node, "Empty catch block — handle or log the exception.");
         }
       },
@@ -90,7 +91,8 @@ function methodHasAssert(methodNode: any): boolean {
     if (nodeType(child) === "DotExpressionContext") {
       const t = textOf(child).toLowerCase();
       if (t.startsWith("system.assert(") || t.startsWith("system.assertequals(") ||
-          t.startsWith("system.assertnotequals(") || t.startsWith("assert.")) {
+          t.startsWith("system.assertnotequals(") || t.startsWith("system.assert.") ||
+          t.startsWith("assert.")) {
         found = true;
       }
     }

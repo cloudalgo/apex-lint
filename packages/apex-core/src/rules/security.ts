@@ -43,6 +43,16 @@ function hasWordRef(text: string, varName: string): boolean {
 }
 
 /**
+ * Remove single-quoted string literal contents so that field names or
+ * column references inside a SOQL string don't shadow tainted variable names,
+ * and so that :bind occurrences inside the literal aren't matched either.
+ * e.g. `query + ' WHERE Id = :id'` → `query + ''`
+ */
+function stripStringLiterals(s: string): string {
+  return s.replace(/'[^']*'/g, "''");
+}
+
+/**
  * Intra-method taint analysis — PMD-style forward propagation.
  *
  * Two-phase per iteration:
@@ -294,7 +304,9 @@ export const apexSOQLInjection: Rule = {
         const t = textOf(n).toLowerCase();
         if (!t.startsWith("database.query(") && !t.startsWith("database.querywithbinds(")) return;
         const parenIdx = t.indexOf("(");
-        const args = t.substring(parenIdx + 1);
+        // Strip string literal contents: field names inside 'WHERE Id = :id'
+        // must not shadow tainted variable names or bind variable occurrences.
+        const args = stripStringLiterals(t.substring(parenIdx + 1));
         for (const v of tainted) {
           if (hasWordRef(args, v)) {
             ctx.report(n, `Tainted variable "${v}" from user-controlled input reaches Database.query() — use bind variables (:var) or String.escapeSingleQuotes() to prevent injection.`);
