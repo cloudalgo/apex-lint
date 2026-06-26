@@ -1,6 +1,21 @@
 import type { Rule } from "../engine/types.js";
 import { enclosingMethod, nodeType, textOf, walk } from "../ast/walk.js";
 
+function classHasIsTest(classNode: any): boolean {
+  const typeDecl = classNode.parentCtx;
+  if (!typeDecl) return false;
+  for (let i = 0; i < (typeDecl.getChildCount?.() ?? 0); i++) {
+    const child = typeDecl.getChild(i);
+    if (nodeType(child) !== "ModifierContext") continue;
+    for (let j = 0; j < (child.getChildCount?.() ?? 0); j++) {
+      const ann = child.getChild(j);
+      if (nodeType(ann) === "AnnotationContext" &&
+          textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase() === "istest") return true;
+    }
+  }
+  return false;
+}
+
 /**
  * UnguardedCrudOperation — the worked example of a *type-aware* rule.
  *
@@ -93,7 +108,9 @@ export const unguardedCrudOperation: Rule = {
   needsMetadata: true,
   description: "DML on an SObject without a CRUD/FLS access check (heuristic).",
   create(ctx) {
+    let inTestClass = false;
     const check = (node: any) => {
+      if (inTestClass) return;
       const sobject = dmlSObject(node);
       if (!sobject) return;
       // The seam: only proceed if metadata confirms this is a real SObject.
@@ -106,7 +123,13 @@ export const unguardedCrudOperation: Rule = {
         `DML on ${sobject} without a CRUD/FLS check (e.g. Schema.sObjectType.${sobject}.isCreateable() or WITH USER_MODE).`,
       );
     };
-    const listener: Record<string, (n: any) => void> = {};
+    const listener: Record<string, (n: any) => void> = {
+      ClassDeclarationContext: (node) => {
+        if (nodeType(node.parentCtx) === "TypeDeclarationContext") {
+          inTestClass = classHasIsTest(node);
+        }
+      },
+    };
     for (const t of DML_CONTEXTS) listener[t] = check;
     return listener;
   },

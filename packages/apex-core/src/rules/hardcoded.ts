@@ -1,5 +1,20 @@
 import type { Rule } from "../engine/types.js";
-import { textOf } from "../ast/walk.js";
+import { nodeType, textOf } from "../ast/walk.js";
+
+function classHasIsTest(classNode: any): boolean {
+  const typeDecl = classNode.parentCtx;
+  if (!typeDecl) return false;
+  for (let i = 0; i < (typeDecl.getChildCount?.() ?? 0); i++) {
+    const child = typeDecl.getChild(i);
+    if (nodeType(child) !== "ModifierContext") continue;
+    for (let j = 0; j < (child.getChildCount?.() ?? 0); j++) {
+      const ann = child.getChild(j);
+      if (nodeType(ann) === "AnnotationContext" &&
+          textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase() === "istest") return true;
+    }
+  }
+  return false;
+}
 
 // 15- or 18-char alphanumeric, must contain a digit (cuts false positives like
 // plain words). Salesforce record IDs always include digits in the key prefix.
@@ -13,8 +28,15 @@ export const avoidHardcodedId: Rule = {
   severity: "moderate",
   description: "Avoid hardcoding Salesforce record IDs; they differ across orgs.",
   create(ctx) {
+    let inTestClass = false;
     return {
+      ClassDeclarationContext: (node) => {
+        if (nodeType(node.parentCtx) === "TypeDeclarationContext") {
+          inTestClass = classHasIsTest(node);
+        }
+      },
       LiteralContext: (node) => {
+        if (inTestClass) return;
         const raw = textOf(node);
         if (raw.length < 17) return; // 15 chars + 2 quotes
         if (raw[0] !== "'" || raw[raw.length - 1] !== "'") return;

@@ -106,11 +106,16 @@ export const soqlInBatchExecute: Rule = {
       QueryContext: (node) => {
         if (!inBatchExecute || !scopeParamName) return;
         const soqlText = textOf(node).toLowerCase();
+        // Apex allows spaces around the bind colon: `IN : var` and `IN :var` are both valid.
+        // Use a regex so both forms match.
+        function bindMatches(varName: string): boolean {
+          return new RegExp(":\\s*" + varName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(soqlText);
+        }
         // Direct bind: SOQL contains :scope
-        if (soqlText.includes(":" + scopeParamName.toLowerCase())) return;
+        if (bindMatches(scopeParamName.toLowerCase())) return;
         // Indirect bind: SOQL binds to a collection populated from scope
         for (const derived of scopeDerivedVars) {
-          if (soqlText.includes(":" + derived)) return;
+          if (bindMatches(derived)) return;
         }
         ctx.report(
           node,
