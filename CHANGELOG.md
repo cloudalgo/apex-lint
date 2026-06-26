@@ -4,6 +4,27 @@ All notable changes to apex-lint are documented here.
 
 ---
 
+## [0.1.15] — 2026-06-26
+
+### Fixed
+
+- **`UnguardedCrudOperation` no longer fires in `@IsTest` classes.**
+  Test data setup DML runs in system context and never requires CRUD/FLS guards.
+  71 false positives eliminated on a real-world org (75% of all hits were in test files).
+
+- **`AvoidHardcodedId` no longer fires in `@IsTest` classes.**
+  Hardcoded Salesforce IDs used as test inputs (e.g. `isRequestValid('123456789012345')`)
+  are intentional test fixtures, not production bugs. 45 of 48 violations on the same
+  org were false positives in test classes.
+
+- **`SoqlInBatchExecute` now recognises the spaced bind colon form.**
+  Apex SOQL allows both `:var` and `: var` (space before the variable name). The
+  previous `includes(':' + varName)` check missed the spaced form, causing
+  scope-bound queries written as `WHERE Id IN : scopeMap.keySet()` to be
+  incorrectly flagged.
+
+---
+
 ## [0.1.14] — 2026-06-26
 
 ### Fixed
