@@ -184,7 +184,8 @@ export const avoidNonRestrictiveQueries: Rule = {
     return {
       QueryContext: (node) => {
         if (isInsideTestClass(node)) return;
-        if (!textOf(node).toLowerCase().includes("where")) {
+        const q = textOf(node).toLowerCase();
+        if (!q.includes("where") && !q.includes("limit")) {
           ctx.report(node, "SOQL query has no WHERE clause — add filters or a LIMIT to avoid scanning all records.");
         }
       },

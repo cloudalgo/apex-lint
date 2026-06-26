@@ -84,17 +84,32 @@ function classIsTest(classNode: any): boolean {
   return hasAnnotationOn(parent, "istest");
 }
 
+function isInsideTestClass(node: any): boolean {
+  let p = node?.parentCtx;
+  while (p) {
+    if (nodeType(p) === "ClassDeclarationContext" && classIsTest(p)) return true;
+    p = p.parentCtx;
+  }
+  return false;
+}
+
 function methodHasAssert(methodNode: any): boolean {
   let found = false;
   walk(methodNode, (child) => {
     if (found) return;
-    if (nodeType(child) === "DotExpressionContext") {
+    const nt = nodeType(child);
+    if (nt === "DotExpressionContext") {
       const t = textOf(child).toLowerCase();
       if (t.startsWith("system.assert(") || t.startsWith("system.assertequals(") ||
           t.startsWith("system.assertnotequals(") || t.startsWith("system.assert.") ||
           t.startsWith("assert.")) {
         found = true;
       }
+    } else if (nt === "MethodCallExpressionContext") {
+      // Delegate assertion: test calls a private helper like assertCompareBoolean()
+      // whose name starts with "assert" — treat as containing an assertion.
+      const name = textOf(child).toLowerCase().split("(")[0];
+      if (name.startsWith("assert")) found = true;
     }
   });
   return found;
@@ -341,6 +356,7 @@ export const hardcodedUrl: Rule = {
   create(ctx) {
     return {
       LiteralContext: (node) => {
+        if (isInsideTestClass(node)) return;
         const t = textOf(node).toLowerCase();
         if (t.startsWith("'http://") || t.startsWith("'https://")) {
           ctx.report(node, "Hardcoded URL — use a Named Credential, Custom Metadata, or Custom Setting instead.");
