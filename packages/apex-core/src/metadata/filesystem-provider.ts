@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, statSync, lstatSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import type {
   FieldInfo,
@@ -75,8 +75,21 @@ export class FilesystemMetadataProvider implements MetadataProvider {
     return fields;
   }
 
-  /** Recursively locate every directory literally named "objects". */
-  private findObjectsDirs(root: string, acc: string[] = []): string[] {
+  /**
+   * Recursively locate every directory literally named "objects". Symlinks are
+   * skipped (not followed) and a visited real-path set guards against cycles, so
+   * a looping or self-referential project tree can't trigger unbounded recursion.
+   */
+  private findObjectsDirs(root: string, acc: string[] = [], seen: Set<string> = new Set()): string[] {
+    let real: string;
+    try {
+      real = realpathSync(root);
+    } catch {
+      return acc;
+    }
+    if (seen.has(real)) return acc;
+    seen.add(real);
+
     let entries: string[];
     try {
       entries = readdirSync(root);
@@ -86,9 +99,15 @@ export class FilesystemMetadataProvider implements MetadataProvider {
     for (const e of entries) {
       if (e === "node_modules" || e.startsWith(".")) continue;
       const p = join(root, e);
-      if (!isDir(p)) continue;
+      let st;
+      try {
+        st = lstatSync(p);
+      } catch {
+        continue;
+      }
+      if (st.isSymbolicLink() || !st.isDirectory()) continue; // don't follow symlinks
       if (e === "objects") acc.push(p);
-      else this.findObjectsDirs(p, acc);
+      else this.findObjectsDirs(p, acc, seen);
     }
     return acc;
   }
