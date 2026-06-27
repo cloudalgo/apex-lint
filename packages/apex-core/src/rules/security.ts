@@ -418,7 +418,7 @@ export const apexSSRF: Rule = {
         const t = textOf(n).toLowerCase();
         if (!t.includes(".setendpoint(")) return;
         const startIdx = t.indexOf(".setendpoint(") + ".setendpoint(".length;
-        const arg = t.substring(startIdx);
+        const arg = stripStringLiterals(t.substring(startIdx));
         for (const v of tainted) {
           if (hasWordRef(arg, v)) {
             ctx.report(n, `Tainted variable "${v}" controls an HTTP callout endpoint — SSRF risk. Validate against an allowlist of permitted hosts before use.`);
@@ -463,7 +463,7 @@ export const apexXSSFromURLParam: Rule = {
 
         // new ApexPages.Message(severity, taintedMsg)
         if (nodeType(n) === "NewExpressionContext" && t.startsWith("newapexpages.message(")) {
-          const args = t.substring("newapexpages.message(".length);
+          const args = stripStringLiterals(t.substring("newapexpages.message(".length));
           for (const v of tainted) {
             if (hasWordRef(args, v)) {
               ctx.report(n, `Tainted variable "${v}" flows into ApexPages.Message() — may render user content unescaped. Sanitize with String.escapeHtml4() before use.`);
@@ -477,7 +477,7 @@ export const apexXSSFromURLParam: Rule = {
         // ApexPages.addMessage(taintedVar) — pre-built Message variable (not inline constructor)
         // Skip if arg contains inline `new ApexPages.Message(...)` — already caught by NewExpressionContext above
         if (t.startsWith("apexpages.addmessage(")) {
-          const args = t.substring("apexpages.addmessage(".length);
+          const args = stripStringLiterals(t.substring("apexpages.addmessage(".length));
           if (!args.includes("newapexpages.message(")) {
             for (const v of tainted) {
               if (hasWordRef(args, v)) {
@@ -491,7 +491,7 @@ export const apexXSSFromURLParam: Rule = {
         // obj.addError(taintedMsg, false) — confirmed tainted + unescaped
         if (t.includes(".adderror(") && t.endsWith(",false)")) {
           const argStart = t.indexOf(".adderror(") + ".adderror(".length;
-          const msgArg = t.substring(argStart, t.length - ",false)".length);
+          const msgArg = stripStringLiterals(t.substring(argStart, t.length - ",false)".length));
           for (const v of tainted) {
             if (hasWordRef(msgArg, v)) {
               ctx.report(n, `Tainted variable "${v}" flows into addError() with escapeXml=false — renders as raw HTML (XSS). Remove the false argument or sanitize.`);

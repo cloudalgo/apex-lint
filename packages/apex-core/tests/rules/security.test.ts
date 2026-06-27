@@ -128,3 +128,9 @@ test('ApexXSSFromURLParam: no flag when escapeHtml4 sanitizes', () => {
   const v = new Linter([apexXSSFromURLParam]).lint(src).violations;
   assert.equal(v.length, 0);
 });
+
+test('ApexXSSFromURLParam: no flag when a literal arg merely contains the param name', () => {
+  const src = `public class C { public void f(String contactId) { ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.FATAL, 'Please pass in a valid contactId and Email.')); } }`;
+  const v = new Linter([apexXSSFromURLParam]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
