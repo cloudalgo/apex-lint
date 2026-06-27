@@ -1,41 +1,9 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, walk } from "../ast/walk.js";
-import { getTaint, SOQL_SANITIZERS as ENGINE_SOQL_SANITIZERS, XSS_SANITIZERS as ENGINE_XSS_SANITIZERS } from "../engine/taint.js";
+import { getTaint, stripStringLiterals, hasWordRef, SOQL_SANITIZERS as ENGINE_SOQL_SANITIZERS, XSS_SANITIZERS as ENGINE_XSS_SANITIZERS } from "../engine/taint.js";
 
-// ─── Intra-method taint analysis (PMD approach) ──────────────────────────────
-
-/**
- * True if `varName` appears as a whole word (not as a substring of a longer
- * identifier) in `text`. Both are expected to be already lowercased.
- */
-function hasWordRef(text: string, varName: string): boolean {
-  let pos = 0;
-  while (pos < text.length) {
-    const idx = text.indexOf(varName, pos);
-    if (idx < 0) return false;
-    const before = idx > 0 ? text[idx - 1] : "";
-    const after = idx + varName.length < text.length ? text[idx + varName.length] : "";
-    if (!/[a-z0-9_]/.test(before) && !/[a-z0-9_]/.test(after)) return true;
-    pos = idx + 1;
-  }
-  return false;
-}
-
-/**
- * Remove single-quoted string literal contents so that field names or
- * column references inside a SOQL string don't shadow tainted variable names,
- * and so that :bind occurrences inside the literal aren't matched either.
- * e.g. `query + ' WHERE Id = :id'` → `query + ''`
- *
- * Apex escapes an embedded quote as `\'`, so the literal body is "any char that
- * is not a quote or backslash, or a backslash followed by any char". Without the
- * `\\.` alternative, `'... = \''` would terminate the literal at the escaped
- * quote and strip the tainted variable that follows it — a SOQL-injection FN on
- * the canonical `Database.query('... = \'' + userInput + '\'')` pattern.
- */
-function stripStringLiterals(s: string): string {
-  return s.replace(/'(?:[^'\\]|\\.)*'/g, "''");
-}
+// `hasWordRef` and `stripStringLiterals` are shared with the taint engine —
+// imported from engine/taint.ts so the two never drift.
 
 // ─── ApexSharingViolations helpers ───────────────────────────────────────────
 
