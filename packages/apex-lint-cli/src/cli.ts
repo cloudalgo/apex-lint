@@ -11,6 +11,8 @@ import {
   type Violation,
 } from "@cloudalgo/apex-core";
 import { loadConfig, type ApexLintConfig } from "./config.js";
+import { selectRules } from "./rules-select.js";
+import { lintInParallel, PARALLEL_THRESHOLD, type FileResult } from "./lint-pool.js";
 import { discoverApexFiles } from "./discover.js";
 import { reportPretty, reportJson } from "./reporters/text.js";
 import { reportSarif } from "./reporters/sarif.js";
@@ -163,37 +165,7 @@ Config file (apexlint.config.json or .apexlintrc.json, auto-discovered):
 
 Exit codes: 0 = clean (below threshold), 1 = violations at/above threshold, 2 = usage error.`;
 
-/**
- * Filter and configure the rule set.
- * Priority: CLI flags > config file > defaults (all rules, all categories).
- */
-function selectRules(
-  rules: Rule[],
-  config: ApexLintConfig,
-  cli: { rules?: string[]; excludeRules?: string[]; categories?: string[] },
-): Rule[] {
-  // Include list: CLI overrides config
-  const includeIds = cli.rules ?? config.rules;
-  const includeSet = includeIds ? new Set(includeIds.map((s) => s.toLowerCase())) : null;
-  // Exclude list: CLI + config merged
-  const excludeIds = new Set<string>([
-    ...config.disabledRules,
-    ...(config.excludeRules ?? []),
-    ...(cli.excludeRules ?? []),
-  ]);
-  // Category filter: CLI overrides config
-  const cats = cli.categories ?? config.categories;
-
-  return rules
-    .filter((r) => !excludeIds.has(r.id))
-    // Opt-in rules run only when named explicitly in the include list.
-    .filter((r) => !r.optIn || (includeSet?.has(r.id.toLowerCase()) ?? false))
-    .filter((r) => !includeSet || includeSet.has(r.id.toLowerCase()))
-    .filter((r) => !cats || cats.map((s) => s.toLowerCase()).includes(r.category.toLowerCase()))
-    .map((r) => (config.severityOverrides[r.id] ? { ...r, severity: config.severityOverrides[r.id] } : r));
-}
-
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const cwd = process.cwd();
 
@@ -260,14 +232,7 @@ function main(): void {
   let totalSuppressed = 0;
   const bar = new ProgressBar(files.length);
 
-  for (const file of files) {
-    let src: string;
-    try {
-      src = readFileSync(file, "utf8");
-    } catch {
-      continue;
-    }
-    const result = linter.lint(src, { filePath: file, metadata });
+  const absorb = (file: string, result: FileResult | { violations: Violation[]; suppressedCount: number; syntaxErrors: { line: number; column: number; message: string }[] }): void => {
     const violations = config.maxViolationsPerFile
       ? result.violations.slice(0, config.maxViolationsPerFile)
       : result.violations;
@@ -277,6 +242,41 @@ function main(): void {
       syntaxProblems.push(`${file}:${e.line}:${e.column} parse error: ${e.message}`);
     }
     bar.tick(file, all.length);
+  };
+
+  const lintSerial = (): void => {
+    for (const file of files) {
+      let src: string;
+      try {
+        src = readFileSync(file, "utf8");
+      } catch {
+        continue;
+      }
+      absorb(file, linter.lint(src, { filePath: file, metadata }));
+    }
+  };
+
+  // Parse+lint is CPU-bound; fan out across worker threads for large runs.
+  // Small runs (or APEX_LINT_NO_PARALLEL=1) stay serial — worker startup would
+  // cost more than it saves. Any worker failure falls back to a serial pass.
+  if (files.length < PARALLEL_THRESHOLD || process.env.APEX_LINT_NO_PARALLEL) {
+    lintSerial();
+  } else {
+    try {
+      await lintInParallel(
+        files,
+        roots.map((r) => resolve(r)),
+        config,
+        { rules: args.rules, excludeRules: args.excludeRules, categories: args.categories },
+        (r) => absorb(r.file, r),
+      );
+    } catch {
+      // Reset partial progress and run serially.
+      all.length = 0;
+      syntaxProblems.length = 0;
+      totalSuppressed = 0;
+      lintSerial();
+    }
   }
 
   bar.done();
@@ -320,9 +320,7 @@ function isDir(p: string): boolean {
   }
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err: unknown) => {
   if (err instanceof UsageError) {
     process.stderr.write(`Error: ${err.message}\n\nRun apex-lint --help for usage.\n`);
     process.exit(2);
@@ -331,4 +329,4 @@ try {
   // so CI distinguishes a tool error from "violations found".
   process.stderr.write(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(2);
-}
+});
