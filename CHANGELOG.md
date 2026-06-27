@@ -4,6 +4,20 @@ All notable changes to apex-lint are documented here.
 
 ---
 
+## [0.1.21] — 2026-06-27
+
+### Added
+- Shared AST taint-tracking engine (`engine/taint.ts`) — entry-point detection seeds `public`/`global`/`webservice` method parameters as taint sources, propagates through assignments in AST order, and caches results via `getTaint`
+- `ApexSOQLInjection`, `ApexOpenRedirect`, `ApexSSRF`, and `ApexXSSFromURLParam` now consume the shared taint engine instead of per-rule taint heuristics
+
+### Fixed
+- Taint false positives trimmed via type filter + sink-side sanitizer detection
+- String literals are stripped before taint matching in XSS/SSRF sinks (escaped-quote false positives)
+
+### Changed
+- Removed per-rule `buildTaintedVars`; taint is served entirely by `engine/taint.ts`
+- De-duplicated `stripStringLiterals` / `hasWordRef` — security rules import them from the taint engine
+
 ## [0.1.20] — 2026-06-27
 
 ### Fixed
