@@ -59,3 +59,80 @@ export const mapGetWithoutNullCheck: Rule = {
     };
   },
 };
+
+// ─── SoqlResultIndexWithoutCheck ─────────────────────────────────────────────
+
+/**
+ * Detects inline SOQL result accessed by index without an isEmpty() guard.
+ * Pattern: [SELECT ...][0]  or  [SELECT ...].get(0)
+ * Safe:    List<Account> a = [SELECT ...]; if (!a.isEmpty()) { a[0]; }
+ */
+export const soqlResultIndexWithoutCheck: Rule = {
+  id: "SoqlResultIndexWithoutCheck",
+  category: "error-prone",
+  severity: "moderate",
+  description: "Inline SOQL result accessed by index — returns empty list if no records found, causing ListException or NRE.",
+  create(ctx) {
+    return {
+      QueryContext: (node) => {
+        if (isInsideTestClass(node)) return;
+
+        // Walk up to find SoqlLiteralContext, then check if it's accessed by index
+        let current = node.parentCtx;
+        let soqlLiteral: any = null;
+
+        // Find the SoqlLiteralContext (the [SELECT...] wrapper)
+        while (current) {
+          const type = nodeType(current);
+          if (type === "SoqlLiteralContext") {
+            soqlLiteral = current;
+            break;
+          }
+          // Stop if we hit something that's not part of the chain
+          if (type !== "SoqlPrimaryContext" && type !== "PrimaryExpressionContext") {
+            return;
+          }
+          current = current.parentCtx;
+        }
+
+        if (!soqlLiteral) return;
+
+        const soqlText = textOf(soqlLiteral);
+
+        // Walk up from SoqlLiteralContext to find ArrayExpressionContext or DotExpressionContext
+        current = soqlLiteral.parentCtx;
+        while (current) {
+          const type = nodeType(current);
+          const currentText = textOf(current);
+          const remainder = currentText.slice(soqlText.length);
+
+          // ArrayExpressionContext: [SELECT...][index]
+          if (type === "ArrayExpressionContext" && /^\[\d+\]/.test(remainder)) {
+            ctx.report(
+              node,
+              "Inline SOQL result accessed by index — assign to a List first and check isEmpty() before accessing elements.",
+            );
+            return;
+          }
+
+          // DotExpressionContext: [SELECT...].get(index)
+          if (type === "DotExpressionContext" && /^\.get\(\d+\)/.test(remainder)) {
+            ctx.report(
+              node,
+              "Inline SOQL result accessed by index — assign to a List first and check isEmpty() before accessing elements.",
+            );
+            return;
+          }
+
+          // Stop if we've moved past the expression access chain
+          if (type !== "SoqlPrimaryContext" && type !== "PrimaryExpressionContext" &&
+              type !== "ArrayExpressionContext" && type !== "DotExpressionContext") {
+            return;
+          }
+
+          current = current.parentCtx;
+        }
+      },
+    };
+  },
+};
