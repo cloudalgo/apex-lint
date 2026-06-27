@@ -34,8 +34,8 @@ export const methodNamingConventions: Rule = {
   create(ctx) {
     return {
       MethodDeclarationContext: (node) => {
-        // Test methods commonly use underscores for readability (method_scenario_expected)
-        if (methodIsTest(node)) return;
+        // Test methods and helpers in test classes commonly use underscores
+        if (methodIsTest(node) || isInsideTestClass(node)) return;
         const idNode = node.id ? node.id() : null;
         const name = idNode ? textOf(idNode) : "";
         if (name && !CAMEL_CASE.test(name)) {
@@ -401,7 +401,10 @@ export const debugsShouldUseLoggingLevel: Rule = {
     return {
       DotExpressionContext: (node) => {
         const t = textOf(node).toLowerCase();
-        if (t.startsWith("system.debug(") && !t.includes("logginglevel.")) {
+        // PMD: count(*)=2 — fires only when there is exactly 1 argument (no LoggingLevel).
+        // Do NOT match on text of the arg: system.debug(level, msg) has 2 args and is correct
+        // even when the level is a variable, not the literal LoggingLevel.WARN enum form.
+        if (t.startsWith("system.debug(") && countTopLevelArgs(t) === 1) {
           ctx.report(node, "System.debug() without a LoggingLevel — use System.debug(LoggingLevel.WARN, 'msg') to control log verbosity.");
         }
       },
