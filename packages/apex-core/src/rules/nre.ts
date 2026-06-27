@@ -1,5 +1,5 @@
 import type { Rule } from "../engine/types.js";
-import { nodeType, textOf } from "../ast/walk.js";
+import { nodeType, textOf, lineOf } from "../ast/walk.js";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -30,6 +30,77 @@ function isInsideTestClass(node: any): boolean {
   return false;
 }
 
+// ─── MapGetWithoutNullCheck helpers ──────────────────────────────────────────
+
+/**
+ * Returns true if `text` contains `.get(...).<identifier>` where the closing
+ * paren is found via balanced-paren matching (handles nested calls in the key).
+ */
+function hasInlineGetDereference(text: string): boolean {
+  const lower = text.toLowerCase();
+  let searchFrom = 0;
+  while (searchFrom < lower.length) {
+    const getIdx = lower.indexOf('.get(', searchFrom);
+    if (getIdx < 0) break;
+    let depth = 1;
+    let j = getIdx + 5;
+    while (j < lower.length && depth > 0) {
+      if (lower[j] === '(') depth++;
+      else if (lower[j] === ')') depth--;
+      j++;
+    }
+    if (depth === 0 && j < lower.length && lower[j] === '.' && j + 1 < lower.length && /[a-z]/i.test(lower[j + 1])) {
+      return true;
+    }
+    searchFrom = getIdx + 1;
+  }
+  return false;
+}
+
+/** Extracts the map variable name — the last identifier before `.get(`. */
+function extractMapName(text: string): string {
+  const getIdx = text.toLowerCase().indexOf('.get(');
+  if (getIdx < 0) return '';
+  const before = text.slice(0, getIdx);
+  const parts = before.split(/[^A-Za-z0-9_]/);
+  return parts[parts.length - 1] ?? '';
+}
+
+/**
+ * Returns true if node is inside a for-each loop whose iterable is
+ * `<mapName>.keySet()` — meaning get(key) can never return null.
+ */
+function isInKeySetLoop(node: any, mapName: string): boolean {
+  if (!mapName) return false;
+  let p = node.parentCtx;
+  while (p) {
+    if (nodeType(p) === 'ForStatementContext') {
+      const forText = textOf(p).toLowerCase();
+      return forText.includes(mapName.toLowerCase() + '.keyset()');
+    }
+    p = p.parentCtx;
+  }
+  return false;
+}
+
+/**
+ * Returns true if node is inside an if/while block whose condition contains
+ * `<mapName>.containsKey(` — guaranteeing the get() result is non-null.
+ */
+function hasContainsKeyGuard(node: any, mapName: string): boolean {
+  if (!mapName) return false;
+  const needle = mapName.toLowerCase() + '.containskey(';
+  let p = node.parentCtx;
+  while (p) {
+    const t = nodeType(p);
+    if (t === 'IfStatementContext' || t === 'WhileStatementContext') {
+      if (textOf(p).toLowerCase().includes(needle)) return true;
+    }
+    p = p.parentCtx;
+  }
+  return false;
+}
+
 // ─── MapGetWithoutNullCheck ───────────────────────────────────────────────────
 
 /**
@@ -43,18 +114,29 @@ export const mapGetWithoutNullCheck: Rule = {
   severity: "moderate",
   description: "Map.get() returns null for missing keys — null-check the result or use ?. before accessing the property.",
   create(ctx) {
+    const reportedLines = new Set<number>();
     return {
       DotExpressionContext: (node) => {
         if (isInsideTestClass(node)) return;
         const text = textOf(node);
-        // Match: <anything>.get(<args>).<identifier>
-        // Exclude: safe navigation (?.) which would appear as "?.field" in text
-        if (/\.get\([^)]*\)\.[A-Za-z]/i.test(text) && !text.includes("?.")) {
-          ctx.report(
-            node,
-            `Map.get() can return null — use ?. or assign to a variable and null-check before accessing '${text}'.`,
-          );
-        }
+        // Exclude safe navigation (?.)
+        if (text.includes("?.")) return;
+        // Use balanced-paren matching instead of regex to avoid false positives
+        // from nested method calls inside the .get() argument.
+        if (!hasInlineGetDereference(text)) return;
+        // Deduplicate: nested DotExpressionContext nodes fire for the same line.
+        const line = lineOf(node);
+        if (reportedLines.has(line)) return;
+        const mapName = extractMapName(text);
+        // keySet() iteration guarantees non-null get() results.
+        if (isInKeySetLoop(node, mapName)) return;
+        // containsKey() guard guarantees non-null get() results.
+        if (hasContainsKeyGuard(node, mapName)) return;
+        reportedLines.add(line);
+        ctx.report(
+          node,
+          `Map.get() can return null — use ?. or assign to a variable and null-check before accessing '${text}'.`,
+        );
       },
     };
   },
