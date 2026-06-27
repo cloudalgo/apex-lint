@@ -12,9 +12,16 @@ const UPDATE_TTL_MS = 86_400_000;
 const DASH_COUNT = 46;
 const INNER_WIDTH = 42;
 
+// Compare release versions only. Strip any prerelease/build metadata first so
+// "1.2.0-beta" parses as [1,2,0] rather than [1,2,NaN] (NaN comparisons are all
+// false, which silently broke the "update available" check on prerelease tags).
+function releaseParts(v: string): number[] {
+  return v.split('+')[0].split('-')[0].split('.').map((n) => parseInt(n, 10) || 0);
+}
+
 export function semverGt(a: string, b: string): boolean {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+  const pa = releaseParts(a);
+  const pb = releaseParts(b);
   for (let i = 0; i < 3; i++) {
     if ((pa[i] ?? 0) > (pb[i] ?? 0)) return true;
     if ((pa[i] ?? 0) < (pb[i] ?? 0)) return false;
@@ -41,9 +48,13 @@ export function readUpdateCache(cachePath = CACHE_PATH): UpdateCache | null {
 }
 
 export function fireUpdateCheck(): void {
+  // Respect the common opt-outs; never phone home in CI.
+  if (process.env.NO_UPDATE_NOTIFIER || process.env.CI) return;
   const cache = readUpdateCache();
   if (cache && Date.now() - cache.checkedAt < UPDATE_TTL_MS) return;
-  void fetch('https://registry.npmjs.org/@cloudalgo/apex-lint/latest')
+  void fetch('https://registry.npmjs.org/@cloudalgo/apex-lint/latest', {
+    signal: AbortSignal.timeout(3000),
+  })
     .then((r) => r.json())
     .then((data) => {
       const latest = (data as { version?: string }).version;

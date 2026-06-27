@@ -23,6 +23,12 @@ test('semverGt: equal versions returns false', () => {
 test('semverGt: older version returns false', () => {
   assert.ok(!semverGt('0.9.0', '1.0.0'));
 });
+test('semverGt: handles prerelease/build tags (no NaN)', () => {
+  assert.ok(semverGt('1.2.0', '1.1.0-beta'));      // release > older prerelease
+  assert.ok(semverGt('2.0.0-rc.1', '1.9.9'));        // newer prerelease > old release
+  assert.ok(!semverGt('1.0.0-beta', '1.0.0-beta'));  // equal prerelease
+  assert.ok(!semverGt('1.0.0+build.5', '1.0.1'));    // build metadata ignored
+});
 
 // readUpdateCache tests
 test('readUpdateCache: returns null for missing file', () => {
