@@ -15,6 +15,11 @@ import { discoverApexFiles } from "./discover.js";
 import { reportPretty, reportJson } from "./reporters/text.js";
 import { reportSarif } from "./reporters/sarif.js";
 import { ProgressBar } from "./progress.js";
+import { createRequire } from "node:module";
+import { readUpdateCache, fireUpdateCheck, printBanner } from "./update.js";
+
+const _require = createRequire(import.meta.url);
+const CURRENT_VERSION = (_require('../package.json') as { version: string }).version;
 
 const SEV_RANK: Record<Severity, number> = {
   critical: 5,
@@ -162,6 +167,12 @@ function selectRules(
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
   const cwd = process.cwd();
+
+  const cache = readUpdateCache();
+  fireUpdateCheck();
+  if (process.stderr.isTTY === true && args.format === 'pretty' && !args.help && !args.listRules) {
+    printBanner(CURRENT_VERSION, cache?.latest ?? null);
+  }
 
   if (args.help) {
     process.stdout.write(HELP + "\n");
