@@ -4,6 +4,15 @@ All notable changes to apex-lint are documented here.
 
 ---
 
+## [0.1.19] — 2026-06-27
+
+### Fixed
+- `MapGetResultNotNullChecked` no longer flags `List.get(index)` assignments — `List.get()` throws on out-of-bounds rather than returning null; only `Map.get()` calls are now tracked
+- `SoqlResultNotNullChecked` and `MapGetResultNotNullChecked` now reset tracked variables on `ConstructorDeclarationContext`, preventing variables from a preceding method bleeding into constructor scope
+- `TriggerContextNullAccess` now deduplicates violations by line number, preventing duplicate reports when `Trigger.old`/`Trigger.new` appears in a complex expression that generates nested AST nodes
+
+---
+
 ## [0.1.18] — 2026-06-27
 
 ### Added
