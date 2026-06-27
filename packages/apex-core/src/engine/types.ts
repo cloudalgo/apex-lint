@@ -56,5 +56,11 @@ export interface Rule {
    * type-aware rule runs with a null provider (no org / no project metadata).
    */
   needsMetadata?: boolean;
+  /**
+   * Opt-in rules do not run by default; the CLI executes them only when the rule
+   * id is named explicitly via `--rules` (or `rules` in config). Use for noisy or
+   * heuristic rules that need manual review rather than build gating.
+   */
+  optIn?: boolean;
   create(ctx: RuleContext): RuleListener;
 }

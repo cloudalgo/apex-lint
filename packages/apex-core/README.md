@@ -294,7 +294,7 @@ To discover which context name a given Apex construct produces, walk a sample fi
 | `TriggerContextNullAccess` | error-prone | moderate |
 | `ChainedRelationshipAccess` | error-prone | info |
 | `SoqlResultNotNullChecked` | error-prone | moderate |
-| `MapGetResultNotNullChecked` | error-prone | moderate |
+| `MapGetResultNotNullChecked` | error-prone | info (opt-in) |
 | `TriggerInlineLogic` | design | moderate |
 | `CyclomaticComplexity` | design | moderate |
 | `CognitiveComplexity` | design | moderate |

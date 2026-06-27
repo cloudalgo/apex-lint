@@ -10,11 +10,13 @@ function violations(source: string): Violation[] {
 
 // ─── MapGetWithoutNullCheck ───────────────────────────────────────────────────
 
+// Uses a key-named arg (accId): a bare loop-counter arg like get(i) is treated as
+// List index access (List.get(index) never returns null) — see the List.get tests.
 test('MapGetWithoutNullCheck: flags inline .get().field dereference', () => {
   const src = `
 public class Foo {
-  public void run(Map<Id, Account> m, Id i) {
-    String name = m.get(i).Name;
+  public void run(Map<Id, Account> m, Id accId) {
+    String name = m.get(accId).Name;
   }
 }`;
   assert.equal(violations(src).length, 1);
@@ -25,11 +27,22 @@ public class Foo {
 test('MapGetWithoutNullCheck: flags inline .get().method() dereference', () => {
   const src = `
 public class Foo {
-  public void run(Map<Id, Account> m, Id i) {
-    m.get(i).doSomething();
+  public void run(Map<Id, Account> m, Id accId) {
+    m.get(accId).doSomething();
   }
 }`;
   assert.equal(violations(src).length, 1);
+});
+
+test('MapGetWithoutNullCheck: no flag for List.get(index).field (literal or loop counter)', () => {
+  const src = `
+public class Foo {
+  public void run(List<Account> l, Integer i) {
+    String a = l.get(0).Name;
+    String b = l.get(i).Name;
+  }
+}`;
+  assert.equal(violations(src).length, 0);
 });
 
 test('MapGetWithoutNullCheck: no flag when result stored and null-checked', () => {
@@ -364,10 +377,12 @@ public class Foo {
 // ─── MapGetResultNotNullChecked ───────────────────────────────────────────────
 
 test('MapGetResultNotNullChecked: flags variable access after Map.get() assignment', () => {
+  // Uses a key-named arg (accId): a bare loop-counter arg like get(i) is treated
+  // as List index access, not Map.get() — see the List.get(loopCounter) tests.
   const src = `
 public class Foo {
-  public void run(Map<Id, Account> m, Id i) {
-    Account a = m.get(i);
+  public void run(Map<Id, Account> m, Id accId) {
+    Account a = m.get(accId);
     String name = a.Name;
   }
 }`;
@@ -474,6 +489,88 @@ public class Foo {
 }`;
   const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
   assert.equal(v.length, 0);
+});
+
+// Regression: List.get() with a non-literal index (loop counter, arithmetic, or an
+// *Index-named variable) was misclassified as Map.get() — 10 of 11 FPs on real repos.
+test('MapGetResultNotNullChecked: no flag for List.get(loopCounter)', () => {
+  const src = `
+public class Foo {
+  public void run(List<Account> accounts, Integer i) {
+    Account a = accounts.get(i);
+    String name = a.Name;
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('MapGetResultNotNullChecked: no flag for List.get(arithmetic index)', () => {
+  const src = `
+public class Foo {
+  public void run(List<Account> accounts, Integer idxMethodCall) {
+    Account a = accounts.get(idxMethodCall - 1);
+    String name = a.Name;
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('MapGetResultNotNullChecked: no flag for List.get(randomIndex)', () => {
+  const src = `
+public class Foo {
+  public void run(List<Account> contacts, Integer randomIndex) {
+    Account a = contacts.get(randomIndex);
+    String name = a.Name;
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+// Regression: iterating map.keySet() guarantees get(key) is non-null.
+test('MapGetResultNotNullChecked: no flag when receiver is iterated by keySet()', () => {
+  const src = `
+public class Foo {
+  public void run(Map<Id, Account> amap) {
+    for (Id aid : amap.keySet()) {
+      Account a = amap.get(aid);
+      String name = a.Name;
+    }
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+// Regression: a containsKey guard often precedes the assignment via early-exit.
+test('MapGetResultNotNullChecked: no flag when containsKey guard precedes the assignment', () => {
+  const src = `
+public class Foo {
+  public void run(Map<Id, Account> existing, Id recordId) {
+    if (!existing.containsKey(recordId)) {
+      return;
+    }
+    Account a = existing.get(recordId);
+    String name = a.Name;
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('MapGetResultNotNullChecked: still flags Map.get(key) with a non-index argument', () => {
+  const src = `
+public class Foo {
+  public void run(Map<String, Account> m, String key) {
+    Account a = m.get(key);
+    String name = a.Name;
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 1);
+  assert.equal(v[0].ruleId, 'MapGetResultNotNullChecked');
 });
 
 test('SoqlResultNotNullChecked: no flag when tracked var is shadowed in constructor', () => {

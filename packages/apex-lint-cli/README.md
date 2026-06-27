@@ -148,7 +148,7 @@ public class LegacyHelper { ... }
 | `TriggerContextNullAccess` | moderate |
 | `ChainedRelationshipAccess` | info |
 | `SoqlResultNotNullChecked` | moderate |
-| `MapGetResultNotNullChecked` | moderate |
+| `MapGetResultNotNullChecked` | info (opt-in) |
 
 ### Design (8)
 | Rule | Severity |

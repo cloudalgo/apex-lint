@@ -100,16 +100,19 @@ function methodHasAssert(methodNode: any): boolean {
     const nt = nodeType(child);
     if (nt === "DotExpressionContext") {
       const t = textOf(child).toLowerCase();
-      if (t.startsWith("system.assert(") || t.startsWith("system.assertequals(") ||
-          t.startsWith("system.assertnotequals(") || t.startsWith("system.assert.") ||
-          t.startsWith("assert.")) {
+      // System.assert*, the Spring '22 Assert class, or mock-framework
+      // verification (fflib_ApexMocks#verify, apex-mockery, etc.). `.verify(`
+      // is matched anywhere in the chain because it is commonly nested inside a
+      // cast: ((IList) mocks.verify(mock)).method().
+      if (t.startsWith("system.assert") || t.startsWith("assert.") || t.includes(".verify(")) {
         found = true;
       }
     } else if (nt === "MethodCallExpressionContext") {
       // Delegate assertion: test calls a private helper like assertCompareBoolean()
-      // whose name starts with "assert" — treat as containing an assertion.
+      // whose name starts with "assert" — treat as containing an assertion. An
+      // unqualified verify() (mock frameworks) counts too.
       const name = textOf(child).toLowerCase().split("(")[0];
-      if (name.startsWith("assert")) found = true;
+      if (name.startsWith("assert") || name === "verify") found = true;
     }
   });
   return found;

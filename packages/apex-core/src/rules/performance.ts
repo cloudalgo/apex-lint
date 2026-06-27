@@ -184,8 +184,13 @@ export const avoidNonRestrictiveQueries: Rule = {
     return {
       QueryContext: (node) => {
         if (isInsideTestClass(node)) return;
-        const q = textOf(node).toLowerCase();
-        if (!q.includes("where") && !q.includes("limit")) {
+        // Use the parsed WHERE/LIMIT clause nodes, not substring matching on the
+        // query text: a field or object whose name contains "where"/"limit"
+        // (e.g. Whereabouts__c, Limit_Reached__c) would otherwise suppress the
+        // warning. Clause accessors return null when the clause is absent.
+        const hasWhere = node.whereClause && node.whereClause();
+        const hasLimit = node.limitClause && node.limitClause();
+        if (!hasWhere && !hasLimit) {
           ctx.report(node, "SOQL query has no WHERE clause — add filters or a LIMIT to avoid scanning all records.");
         }
       },

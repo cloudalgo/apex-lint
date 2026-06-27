@@ -47,9 +47,15 @@ function hasWordRef(text: string, varName: string): boolean {
  * column references inside a SOQL string don't shadow tainted variable names,
  * and so that :bind occurrences inside the literal aren't matched either.
  * e.g. `query + ' WHERE Id = :id'` → `query + ''`
+ *
+ * Apex escapes an embedded quote as `\'`, so the literal body is "any char that
+ * is not a quote or backslash, or a backslash followed by any char". Without the
+ * `\\.` alternative, `'... = \''` would terminate the literal at the escaped
+ * quote and strip the tainted variable that follows it — a SOQL-injection FN on
+ * the canonical `Database.query('... = \'' + userInput + '\'')` pattern.
  */
 function stripStringLiterals(s: string): string {
-  return s.replace(/'[^']*'/g, "''");
+  return s.replace(/'(?:[^'\\]|\\.)*'/g, "''");
 }
 
 /**
@@ -522,8 +528,12 @@ export const databaseQueryWithVariable: Rule = {
             const firstArg = grand.getChild(0);
             if (!firstArg) continue;
             const argText = textOf(firstArg);
-            // String literals start with single quote in Apex
-            if (argText.startsWith("'")) return; // safe — static string
+            // Safe only if the whole argument is one static string literal. A
+            // concatenation like 'SELECT … = ' + userInput also starts with a
+            // quote, so a bare startsWith("'") check would miss the canonical
+            // injection pattern — require that no concatenation remains once the
+            // literal bodies are stripped.
+            if (argText.startsWith("'") && !stripStringLiterals(argText).includes("+")) return;
             ctx.report(
               node,
               "Database.query() with a non-literal argument — use bind variables or parameterized queries to prevent SOQL injection.",

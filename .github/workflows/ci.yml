@@ -36,5 +36,8 @@ jobs:
       - name: Type-check apex-lint-cli
         run: npx tsc --noEmit -p packages/apex-lint-cli/tsconfig.json
 
+      - name: Run tests
+        run: pnpm test
+
       - name: Smoke-test CLI
         run: node packages/apex-lint-cli/dist/cli.js fixtures/sample-project --format json --output /dev/null --fail-on critical

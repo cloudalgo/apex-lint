@@ -40,9 +40,21 @@ const DML_CONTEXTS = new Set([
   "UndeleteStatementContext",
 ]);
 
-// Any of these appearing in the method body counts as a guard for the heuristic.
-const GUARD_RE =
-  /\bis(Createable|Updateable|Deletable|Accessible|Upsertable)\b|stripInaccessible|SECURITY_ENFORCED|\bUSER_MODE\b|\bas user\b/i;
+// Object-agnostic guards: cannot be attributed to a single SObject without
+// dataflow, so any occurrence suppresses the whole method (conservative — keeps
+// false positives low on this high-severity rule). Matched against whitespace-
+// stripped text, so `WITH USER_MODE`→`user_mode`, `insert as user`→`asuser`.
+const AGNOSTIC_GUARD_RE = /stripinaccessible|security_enforced|user_mode|asuser/;
+
+/**
+ * Object-naming guard for a specific SObject, e.g. `Schema.sObjectType.Contact.isUpdateable()`
+ * or FLS `…Contact.fields.Name.isCreateable()`. Built per-object so a guard on
+ * Account does not silence DML on Contact. Matched on whitespace-stripped, lowercased text.
+ */
+function objectGuardRe(sobject: string): RegExp {
+  const obj = sobject.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`${obj}[a-z0-9_.()\\[\\],]{0,80}is(createable|updateable|deletable|accessible|upsertable)`);
+}
 
 /** Strip List<...>, Set<...>, X[] down to the inner SObject name. */
 function innerType(typeText: string): string {
@@ -116,8 +128,11 @@ export const unguardedCrudOperation: Rule = {
       // The seam: only proceed if metadata confirms this is a real SObject.
       if (!ctx.metadata.hasObject(sobject)) return;
       const method = enclosingMethod(node);
-      const scope = method ? textOf(method) : ctx.source;
-      if (GUARD_RE.test(scope)) return;
+      const scope = (method ? textOf(method) : ctx.source).toLowerCase();
+      // Object-agnostic guard anywhere in the method → suppress (conservative).
+      if (AGNOSTIC_GUARD_RE.test(scope)) return;
+      // Otherwise require a CRUD/FLS guard that names THIS SObject.
+      if (objectGuardRe(sobject).test(scope)) return;
       ctx.report(
         node,
         `DML on ${sobject} without a CRUD/FLS check (e.g. Schema.sObjectType.${sobject}.isCreateable() or WITH USER_MODE).`,

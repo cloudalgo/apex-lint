@@ -50,7 +50,10 @@ function hasInlineGetDereference(text: string): boolean {
       j++;
     }
     if (depth === 0 && j < lower.length && lower[j] === '.' && j + 1 < lower.length && /[a-z]/i.test(lower[j + 1])) {
-      return true;
+      // Skip List.get(index).field — an integer index means List access, whose
+      // result is never null for a valid index (the closing paren is at j-1).
+      const arg = lower.slice(getIdx + 5, j - 1);
+      if (!isListIndexArg(arg)) return true;
     }
     searchFrom = getIdx + 1;
   }
@@ -399,6 +402,50 @@ export const soqlResultNotNullChecked: Rule = {
 
 // ─── MapGetResultNotNullChecked ───────────────────────────────────────────────
 
+/** Extracts every `.get(<arg>)` argument from `text` via balanced-paren matching. */
+function getCallArguments(text: string): string[] {
+  const args: string[] = [];
+  let from = 0;
+  while (from < text.length) {
+    const idx = text.indexOf(".get(", from);
+    if (idx < 0) break;
+    let depth = 1;
+    let j = idx + 5;
+    const start = j;
+    while (j < text.length && depth > 0) {
+      if (text[j] === "(") depth++;
+      else if (text[j] === ")") depth--;
+      if (depth > 0) j++;
+    }
+    args.push(text.slice(start, j));
+    from = idx + 5;
+  }
+  return args;
+}
+
+/** Last identifier of the receiver before the first `.get(` — the map's base name. */
+function mapReceiverName(text: string): string {
+  const idx = text.indexOf(".get(");
+  if (idx < 0) return "";
+  const parts = text.slice(0, idx).split(/[^a-z0-9_]/);
+  return parts[parts.length - 1] ?? "";
+}
+
+/**
+ * True if `arg` is an integer-index expression — i.e. `List.get(index)`, not
+ * `Map.get(key)`. List access returns the element (never null for a valid index),
+ * so it is not an NRE candidate. `arg` is lowercase, whitespace-stripped.
+ */
+function isListIndexArg(arg: string): boolean {
+  const a = arg.trim();
+  if (a === "") return false;
+  if (/^\d+$/.test(a)) return true;                  // literal: get(0)
+  if (/[-+*/]/.test(a) && /\d/.test(a)) return true; // arithmetic: get(i-1), get(size()-1)
+  if (/^(i|j|k|m|n|x|y|idx|index|counter|cnt|pos)$/.test(a)) return true; // loop counters
+  if (/(index|idx|count|counter|pos)$/.test(a)) return true;             // randomIndex, rowIdx
+  return false;
+}
+
 /**
  * Detects sObject variable assigned from Map.get() and subsequently accessed
  * without a null check. Map.get() returns null for missing keys, making any
@@ -406,30 +453,44 @@ export const soqlResultNotNullChecked: Rule = {
  *
  * Identifies the pattern by checking if the variable initializer text contains
  * `.get(` (after whitespace stripping). Suppressed when: safe navigation used,
- * null check or containsKey guard precedes the access.
+ * a null check or containsKey guard precedes the access, the receiver is iterated
+ * by keySet(), or the argument is an integer index (List.get).
+ *
+ * Severity is `info`: without type/dataflow analysis this rule cannot tell a
+ * safe-by-construction access (the developer populated the map) from a real NRE,
+ * nor SObject.get(fieldName) from Map.get(key). It is a review signal, not a
+ * build-failing error — hence it stays below the default `--fail-on moderate`.
  */
 export const mapGetResultNotNullChecked: Rule = {
   id: "MapGetResultNotNullChecked",
   category: "error-prone",
-  severity: "moderate",
-  description: "Variable assigned from Map.get() may be null — access without null check is an NRE risk.",
+  severity: "info",
+  // Off by default: heuristic, high-volume on real codebases. Run with
+  // `--rules MapGetResultNotNullChecked` when auditing for unguarded Map.get().
+  optIn: true,
+  description: "Variable assigned from Map.get() may be null — review for a null check or use ?. (heuristic).",
   create(ctx) {
-    // Map: variable name (lowercase) → 1-based line number of the assignment
-    const mapGetVars = new Map<string, number>();
+    // Map: variable name (lowercase) → assignment line + the map's receiver name.
+    const mapGetVars = new Map<string, { line: number; base: string }>();
     const sourceLines = ctx.source.split("\n");
     // Tracks (varName:line) pairs already reported to avoid duplicate violations.
     const reportedVarLines = new Set<string>();
+    // 1-based start line of the enclosing method/constructor — the backward bound
+    // for guard detection (a containsKey guard often precedes the assignment).
+    let scopeStartLine = 1;
 
     return {
-      MethodDeclarationContext: (_node) => {
+      MethodDeclarationContext: (node) => {
         // Clear per-method to avoid inter-method false positives.
         mapGetVars.clear();
         reportedVarLines.clear();
+        scopeStartLine = node.start?.line ?? 1;
       },
 
-      ConstructorDeclarationContext: (_node) => {
+      ConstructorDeclarationContext: (node) => {
         mapGetVars.clear();
         reportedVarLines.clear();
+        scopeStartLine = node.start?.line ?? 1;
       },
 
       VariableDeclaratorContext: (node) => {
@@ -442,8 +503,11 @@ export const mapGetResultNotNullChecked: Rule = {
         if (!exprText.includes(".get(")) return;
         // Exclude `this.get()` / `super.get()` — instance methods named get, not Map.get()
         if (exprText.includes("this.get(") || exprText.includes("super.get(")) return;
-        // Skip List.get(index) — numeric argument means this is List access, not Map.get()
-        if (/\.get\(\d+\)/i.test(exprText)) return;
+        // Skip List.get(index) — an integer-index argument (literal, loop counter, or
+        // arithmetic) means this is List access, not Map.get(). Only when EVERY get()
+        // call is index-style; a string/Id key elsewhere keeps it a Map candidate.
+        const getArgs = getCallArguments(exprText);
+        if (getArgs.length > 0 && getArgs.every(isListIndexArg)) return;
         // Exclude common non-Map .get() patterns (Schema describe methods, etc.)
         if (
           exprText.includes(".getdescribe(") ||
@@ -458,8 +522,12 @@ export const mapGetResultNotNullChecked: Rule = {
         const varName = idNode ? textOf(idNode) : "";
         if (!varName) return;
 
+        const base = mapReceiverName(exprText);
+        // for (k : map.keySet()) { v = map.get(k); … } — get() can never return null.
+        if (isInKeySetLoop(node, base)) return;
+
         const line = node.start?.line ?? 0;
-        mapGetVars.set(varName.toLowerCase(), line);
+        mapGetVars.set(varName.toLowerCase(), { line, base });
       },
 
       DotExpressionContext: (node) => {
@@ -468,22 +536,26 @@ export const mapGetResultNotNullChecked: Rule = {
         const text = textOf(node);
         const textLower = text.toLowerCase();
 
-        for (const [varName, assignLine] of mapGetVars) {
+        for (const [varName, { line: assignLine, base }] of mapGetVars) {
           // Must start with varName. (field access or method call)
           if (!textLower.startsWith(varName + ".")) continue;
           // Safe navigation (?.) means developer already guards — no flag.
           if (text.includes("?.")) continue;
 
           const accessLine = node.start?.line ?? 0;
-          // Look for a null check or containsKey guard between assignment and access.
-          const between = sourceLines.slice(assignLine, accessLine).join("\n").toLowerCase();
+          // A null check for the variable can only appear after its assignment.
+          const afterAssign = sourceLines.slice(assignLine, accessLine).join("\n").toLowerCase();
           const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const guardPattern = new RegExp(
             `(?:${escaped}\\s*!=\\s*null|null\\s*!=\\s*${escaped}|${escaped}\\s*==\\s*null|null\\s*==\\s*${escaped})`,
           );
-          if (guardPattern.test(between)) continue;
-          // containsKey() guard means the developer verified the key exists.
-          if (between.includes(".containskey(")) continue;
+          if (guardPattern.test(afterAssign)) continue;
+          // A containsKey() guard for this map may precede the assignment (the common
+          // `if (!m.containsKey(k)) return; T v = m.get(k);` idiom), so scan from the
+          // start of the enclosing method, not just from the assignment line.
+          const inScope = sourceLines.slice(scopeStartLine - 1, accessLine).join("\n").toLowerCase();
+          const containsKeyGuard = base ? `${base}.containskey(` : ".containskey(";
+          if (inScope.includes(containsKeyGuard)) continue;
 
           // Deduplicate: nested DotExpressionContext nodes can fire for the same variable+line.
           const key = `${varName}:${accessLine}`;

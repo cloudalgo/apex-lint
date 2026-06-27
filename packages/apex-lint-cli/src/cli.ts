@@ -29,6 +29,12 @@ const SEV_RANK: Record<Severity, number> = {
   info: 1,
 };
 
+const VALID_FORMATS = ["pretty", "json", "sarif"] as const;
+const VALID_SEVERITIES = Object.keys(SEV_RANK) as Severity[];
+
+/** Thrown for bad invocation; caught at the top level → stderr + exit 2. */
+class UsageError extends Error {}
+
 interface Args {
   paths: string[];
   format: "pretty" | "json" | "sarif";
@@ -55,38 +61,59 @@ function parseArgs(argv: string[]): Args {
     listRules: false,
     help: false,
   };
+  // Reads the value following a value-flag, erroring if it is missing.
+  const value = (i: number, flag: string): string => {
+    const v = argv[i + 1];
+    if (v === undefined || v.startsWith("-")) {
+      throw new UsageError(`Option ${flag} requires a value.`);
+    }
+    return v;
+  };
+  const list = (i: number, flag: string): string[] =>
+    value(i, flag).split(",").map((s) => s.trim()).filter(Boolean);
+
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
       case "--format":
-      case "-f":
-        args.format = argv[++i] as Args["format"];
+      case "-f": {
+        const fmt = value(i++, a);
+        if (!(VALID_FORMATS as readonly string[]).includes(fmt)) {
+          throw new UsageError(`Invalid --format "${fmt}". Expected: ${VALID_FORMATS.join(" | ")}.`);
+        }
+        args.format = fmt as Args["format"];
         break;
-      case "--fail-on":
-        args.failOn = argv[++i] as Severity;
+      }
+      case "--fail-on": {
+        const sev = value(i++, a);
+        if (!(VALID_SEVERITIES as string[]).includes(sev)) {
+          throw new UsageError(`Invalid --fail-on "${sev}". Expected: ${VALID_SEVERITIES.join(" | ")}.`);
+        }
+        args.failOn = sev as Severity;
         break;
+      }
       case "--config":
       case "-c":
-        args.configPath = argv[++i];
+        args.configPath = value(i++, a);
         break;
       case "--output":
       case "-o":
-        args.outputPath = argv[++i];
+        args.outputPath = value(i++, a);
         break;
       case "--metadata-root":
-        args.metadataRoots.push(argv[++i]);
+        args.metadataRoots.push(value(i++, a));
         break;
       case "--list-rules":
         args.listRules = true;
         break;
       case "--rules":
-        args.rules = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+        args.rules = list(i++, a);
         break;
       case "--exclude-rules":
-        args.excludeRules = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+        args.excludeRules = list(i++, a);
         break;
       case "--categories":
-        args.categories = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+        args.categories = list(i++, a);
         break;
       case "--help":
       case "-h":
@@ -94,8 +121,7 @@ function parseArgs(argv: string[]): Args {
         break;
       default:
         if (a.startsWith("-")) {
-          process.stderr.write(`Unknown option: ${a}\n`);
-          process.exit(2);
+          throw new UsageError(`Unknown option: ${a}`);
         }
         args.paths.push(a);
     }
@@ -148,6 +174,7 @@ function selectRules(
 ): Rule[] {
   // Include list: CLI overrides config
   const includeIds = cli.rules ?? config.rules;
+  const includeSet = includeIds ? new Set(includeIds.map((s) => s.toLowerCase())) : null;
   // Exclude list: CLI + config merged
   const excludeIds = new Set<string>([
     ...config.disabledRules,
@@ -159,7 +186,9 @@ function selectRules(
 
   return rules
     .filter((r) => !excludeIds.has(r.id))
-    .filter((r) => !includeIds || includeIds.map((s) => s.toLowerCase()).includes(r.id.toLowerCase()))
+    // Opt-in rules run only when named explicitly in the include list.
+    .filter((r) => !r.optIn || (includeSet?.has(r.id.toLowerCase()) ?? false))
+    .filter((r) => !includeSet || includeSet.has(r.id.toLowerCase()))
     .filter((r) => !cats || cats.map((s) => s.toLowerCase()).includes(r.category.toLowerCase()))
     .map((r) => (config.severityOverrides[r.id] ? { ...r, severity: config.severityOverrides[r.id] } : r));
 }
@@ -186,8 +215,8 @@ function main(): void {
       const catRules = allRules.filter((r) => r.category === cat);
       process.stdout.write(`\n${cat} (${catRules.length})\n${"─".repeat(cat.length + 4)}\n`);
       for (const r of catRules) {
-        const meta = r.needsMetadata ? " [metadata]" : "";
-        process.stdout.write(`  ${r.id.padEnd(32)} ${r.severity.padEnd(10)} ${r.description}${meta}\n`);
+        const tags = `${r.needsMetadata ? " [metadata]" : ""}${r.optIn ? " [opt-in]" : ""}`;
+        process.stdout.write(`  ${r.id.padEnd(32)} ${r.severity.padEnd(10)} ${r.description}${tags}\n`);
       }
     }
     process.stdout.write(`\n${allRules.length} rules total.\n`);
@@ -291,4 +320,15 @@ function isDir(p: string): boolean {
   }
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  if (err instanceof UsageError) {
+    process.stderr.write(`Error: ${err.message}\n\nRun apex-lint --help for usage.\n`);
+    process.exit(2);
+  }
+  // Unexpected failure (e.g. malformed config): report and exit 2, not 1,
+  // so CI distinguishes a tool error from "violations found".
+  process.stderr.write(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(2);
+}

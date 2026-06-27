@@ -5,6 +5,7 @@
   "description": "Pure-Node, zero-JVM static analysis engine for Salesforce Apex",
   "scripts": {
     "build": "pnpm -r build",
+    "test": "node --import tsx --test \"packages/**/tests/**/*.test.ts\"",
     "demo": "tsx packages/apex-lint-cli/src/cli.ts fixtures/sample-project --format pretty",
     "release": "bash scripts/release.sh"
   },

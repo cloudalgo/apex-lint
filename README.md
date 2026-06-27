@@ -199,6 +199,8 @@ Suppressed violations are counted separately and shown in the summary line (`N s
 
 47 built-in rules across 6 categories. See [docs/rules.md](docs/rules.md) for the full reference with examples and fixes.
 
+**Opt-in rules.** A rule tagged `[opt-in]` does **not** run by default — it executes only when you name it explicitly via `--rules <Id>` (or list it under `rules` in config). These are heuristic, high-volume rules that are valuable for a targeted audit but too noisy to gate every build. `MapGetResultNotNullChecked` is the current example: without Apex type/dataflow analysis it cannot distinguish a real null risk from a `Map.get()` the developer knows is populated, or from `SObject.get(fieldName)` field access — so on large codebases it fires hundreds of mostly-safe findings (this is also why PMD ships no equivalent). Making it opt-in keeps the signal available for `apex-lint <path> --rules MapGetResultNotNullChecked` audits without flooding default runs. Run `--list-rules` to see which rules are `[opt-in]`.
+
 ### Security (10)
 
 | Rule | Severity | Description |
@@ -242,7 +244,7 @@ Suppressed violations are counted separately and shown in the summary line (`N s
 | `TriggerContextNullAccess` | moderate | Trigger.old on INSERT triggers or Trigger.new on DELETE triggers is always null |
 | `ChainedRelationshipAccess` | info | 3+ level sObject relationship chain without null guards |
 | `SoqlResultNotNullChecked` | moderate | LIMIT 1 SOQL result variable accessed without null check |
-| `MapGetResultNotNullChecked` | moderate | Map.get() result variable accessed without null check |
+| `MapGetResultNotNullChecked` | info | Map.get() result variable accessed without null check — **opt-in** (off by default), run with `--rules MapGetResultNotNullChecked` |
 
 ### Design (8)
 
