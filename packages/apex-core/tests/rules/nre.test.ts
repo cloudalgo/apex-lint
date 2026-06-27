@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Linter } from '../../src/engine/engine.js';
 import type { Violation } from '../../src/engine/types.js';
-import { mapGetWithoutNullCheck, soqlResultIndexWithoutCheck, triggerContextNullAccess } from '../../src/rules/nre.js';
+import { mapGetWithoutNullCheck, soqlResultIndexWithoutCheck, triggerContextNullAccess, chainedRelationshipAccess } from '../../src/rules/nre.js';
 
 function violations(source: string): Violation[] {
   return new Linter([mapGetWithoutNullCheck]).lint(source).violations;
@@ -186,5 +186,87 @@ public class Foo {
   }
 }`;
   const v = new Linter([triggerContextNullAccess]).lint({ source: src, filePath: 'Foo.cls' }).violations;
+  assert.equal(v.length, 0);
+});
+
+// ─── ChainedRelationshipAccess ────────────────────────────────────────────────
+
+test('ChainedRelationshipAccess: flags 3-level sObject chain', () => {
+  const src = `
+public class Foo {
+  public void run(Account a) {
+    String email = a.Owner.Email;
+  }
+}`;
+  const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
+  assert.equal(v.length, 1);
+  assert.equal(v[0].ruleId, 'ChainedRelationshipAccess');
+});
+
+test('ChainedRelationshipAccess: flags 4-level sObject chain', () => {
+  const src = `
+public class Foo {
+  public void run(Opportunity opp) {
+    String name = opp.Account.Owner.Name;
+  }
+}`;
+  const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
+  assert.equal(v.length, 1);
+});
+
+test('ChainedRelationshipAccess: no flag for 2-level chain', () => {
+  const src = `
+public class Foo {
+  public void run(Account a) {
+    String name = a.Name;
+  }
+}`;
+  const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('ChainedRelationshipAccess: no flag for method call chain (not property chain)', () => {
+  const src = `
+public class Foo {
+  public void run() {
+    String s = SomeService.getInstance().getConfig().value;
+  }
+}`;
+  const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('ChainedRelationshipAccess: no flag when safe nav used', () => {
+  const src = `
+public class Foo {
+  public void run(Account a) {
+    String email = a.Owner?.Email;
+  }
+}`;
+  const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('ChainedRelationshipAccess: no flag for Schema namespace chains', () => {
+  const src = `
+public class Foo {
+  public void run() {
+    String label = Schema.SObjectType.Account.fields.Name.label;
+  }
+}`;
+  const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('ChainedRelationshipAccess: skips @IsTest classes', () => {
+  const src = `
+@IsTest
+public class FooTest {
+  static testMethod void run() {
+    Account a = new Account();
+    String email = a.Owner.Email;
+  }
+}`;
+  const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
   assert.equal(v.length, 0);
 });

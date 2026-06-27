@@ -219,6 +219,80 @@ export const soqlResultIndexWithoutCheck: Rule = {
   },
 };
 
+// ─── ChainedRelationshipAccess ────────────────────────────────────────────────
+
+/**
+ * Known Salesforce sObject relationship field names that commonly appear
+ * as intermediate hops in cross-object traversals. Used to distinguish
+ * sObject chains from arbitrary method chains.
+ */
+const SOBJECT_RELATIONSHIP_FIELDS = new Set([
+  "owner", "account", "contact", "lead", "opportunity", "case", "campaign",
+  "asset", "createdby", "lastmodifiedby", "manager", "reportsto", "parent",
+  "userrole", "profile", "recordtype", "masterrecord", "user",
+]);
+
+/** System namespaces whose multi-level chains are NOT sObject traversals. */
+const SYSTEM_NAMESPACES = new Set([
+  "system", "schema", "database", "test", "math", "json", "limits",
+  "userinfo", "url", "crypto", "datetime", "date", "integer", "string",
+  "boolean", "decimal", "long", "double",
+]);
+
+/**
+ * Detects multi-level sObject property chains that traverse relationships
+ * without null guards. Each hop may be null if the relationship field was
+ * not included in the SOQL SELECT clause.
+ *
+ * Fires only on pure property chains (no method calls, no array access) that
+ * contain a known Salesforce relationship field as an intermediate segment.
+ * Severity: info — not every chain is an NRE risk (query may always return data).
+ */
+export const chainedRelationshipAccess: Rule = {
+  id: "ChainedRelationshipAccess",
+  category: "error-prone",
+  severity: "info",
+  description: "Multi-level sObject relationship chain — each hop may be null if the relationship was not queried. Use ?. or add null guards.",
+  create(ctx) {
+    const reportedLines = new Set<number>();
+    return {
+      DotExpressionContext: (node) => {
+        if (isInsideTestClass(node)) return;
+        const text = textOf(node);
+
+        // Exclude if contains method calls or array access (not a pure property chain)
+        if (text.includes("(") || text.includes("[")) return;
+        // Exclude if uses safe navigation
+        if (text.includes("?.")) return;
+
+        const parts = text.split(".");
+        // Need at least 3 parts (a.b.c) for a multi-level chain
+        if (parts.length < 3) return;
+
+        // Exclude known system namespaces (Schema.X.Y, System.X.Y, etc.)
+        if (SYSTEM_NAMESPACES.has(parts[0].toLowerCase())) return;
+
+        // Only flag if an intermediate segment (not last) is a known sObject relationship
+        const intermediate = parts.slice(0, -1); // all but last
+        const hasRelationship = intermediate.some(p =>
+          SOBJECT_RELATIONSHIP_FIELDS.has(p.toLowerCase())
+        );
+        if (!hasRelationship) return;
+
+        // Deduplicate: nested DotExpressionContext nodes fire for the same line
+        const line = lineOf(node);
+        if (reportedLines.has(line)) return;
+        reportedLines.add(line);
+
+        ctx.report(
+          node,
+          `Multi-level sObject chain '${text}' — use ?. for each relationship hop or verify the field was queried.`,
+        );
+      },
+    };
+  },
+};
+
 // ─── TriggerContextNullAccess ─────────────────────────────────────────────────
 
 /**
