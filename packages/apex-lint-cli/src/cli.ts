@@ -169,7 +169,9 @@ function main(): void {
   const cwd = process.cwd();
 
   const cache = readUpdateCache();
-  fireUpdateCheck();
+  if (!args.help && !args.listRules) {
+    fireUpdateCheck();
+  }
   if (process.stderr.isTTY === true && args.format === 'pretty' && !args.help && !args.listRules) {
     printBanner(CURRENT_VERSION, cache?.latest ?? null);
   }
