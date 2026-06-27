@@ -134,16 +134,16 @@ The originally-claimed pairs do not overlap in practice: across all 10 test-data
 
 ---
 
-## Medium
+## Medium — all addressed
 
-- ◽ **`stripStringLiterals` ignores escaped quotes** (`security.ts:51`) — `'it\'s'` mis-terminates, shifting the taint boundary. Core of the injection rule.
-- ◽ **`UnusedPrivateMethod` can false-positive dead-code** (`design.ts:242`) — chained-call detection takes only `.pop()` of the dotted chain, missing `this.helper().process()`.
-- ◽ **`FutureMethodChaining` callee resolution** (`async.ts:94`) — grabs the first `IdContext`, so `helper.doFuture()` resolves to `helper` and the chain is missed.
-- ◽ **SARIF reporter** (`reporters/sarif.ts`) — hardcoded `version: "0.1.0"` despite `CURRENT_VERSION` being available; `ruleIndex ?? 0` mislabels unknown rules; no `endColumn`.
-- ◽ **`semverGt` breaks on prereleases** (`update.ts:15`) — `"1.2.0-beta"` → `[1,2,NaN]`. Update checker also has no timeout, no `CI`/`NO_UPDATE_NOTIFIER` opt-out, and is fire-and-forget racing `process.exit`.
-- ◽ **`FilesystemMetadataProvider.findObjectsDirs`** (`filesystem-provider.ts:79`) — unbounded recursive `readdirSync`, no symlink-cycle guard. Use `lstatSync` + visited-set.
-- ◽ **Config auto-discovery scans target dirs** (`config.ts:81`) — `apex-lint ./vendor/pkg` can load `./vendor/pkg/apexlint.config.json` and apply third-party rules. Scope to cwd + ancestors.
-- ◽ **No `main()` validation of config field types** (`config.ts:95`) — `"rules": "SoqlInLoop"` (string not array) passes `JSON.parse` then throws an uncaught stack trace in `selectRules`.
+- ✅ **`stripStringLiterals` ignores escaped quotes** — fixed as **H7** (escape-aware regex); had real SOQL-injection FN impact.
+- ✅ **`UnusedPrivateMethod` chained-call FP** (`design.ts`) — now extracts every `name(` in a call expression, so a method used only as the tail of a chain (`this.helper().process()`) is not reported unused. test-data 74 → 72. Regression test added.
+- ✅ **`FutureMethodChaining`** (`async.ts`) — the claimed FP did **not** reproduce (`helper.doFuture()` is a `DotExpressionContext` the handler never processed; the bare-call path resolves correctly). The real gap was a **false negative**: a same-class qualified call (`this.m()` / `ThisClass.m()`) was missed. Added a `DotExpressionContext` handler scoped to `this`/the enclosing class name (FP-safe). +3 tests.
+- ✅ **SARIF reporter** — threads the real `CURRENT_VERSION` (was hardcoded `0.1.0`); omits `ruleIndex` when the rule isn't in the run (was defaulting to `0` → wrong rule). `endColumn` is N/A — the `Violation` type carries no end column.
+- ✅ **`semverGt` prereleases + update-checker hardening** — strips prerelease/build metadata (was `[1,2,NaN]`); update check now skips in `CI`/`NO_UPDATE_NOTIFIER` and bounds the fetch with a 3 s timeout. +1 test.
+- ✅ **`FilesystemMetadataProvider.findObjectsDirs`** — skips symlinks (`lstatSync`) and tracks visited real paths, so a looping project tree no longer recurses unbounded. +1 test.
+- ✅ **Config auto-discovery scope** — restricted to cwd + ancestors; no longer loads a config inside a scanned target dir.
+- ✅ **Config field-type validation** — `loadConfig` validates field shapes and the `failOn` value, exiting 2 with a clear message instead of an uncaught crash. +5 tests.
 
 ---
 
