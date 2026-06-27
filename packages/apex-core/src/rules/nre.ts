@@ -368,7 +368,7 @@ export const soqlResultNotNullChecked: Rule = {
           const accessLine = node.start?.line ?? 0;
           // Look for a null check for this variable in the source lines
           // between the assignment and the current access (exclusive of both).
-          const between = sourceLines.slice(assignLine, accessLine - 1).join("\n").toLowerCase();
+          const between = sourceLines.slice(assignLine, accessLine).join("\n").toLowerCase();
           const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const guardPattern = new RegExp(
             `(?:${escaped}\\s*!=\\s*null|null\\s*!=\\s*${escaped}|${escaped}\\s*==\\s*null|null\\s*==\\s*${escaped})`,
@@ -464,7 +464,7 @@ export const mapGetResultNotNullChecked: Rule = {
 
           const accessLine = node.start?.line ?? 0;
           // Look for a null check or containsKey guard between assignment and access.
-          const between = sourceLines.slice(assignLine, accessLine - 1).join("\n").toLowerCase();
+          const between = sourceLines.slice(assignLine, accessLine).join("\n").toLowerCase();
           const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const guardPattern = new RegExp(
             `(?:${escaped}\\s*!=\\s*null|null\\s*!=\\s*${escaped}|${escaped}\\s*==\\s*null|null\\s*==\\s*${escaped})`,

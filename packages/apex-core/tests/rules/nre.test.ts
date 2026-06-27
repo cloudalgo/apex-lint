@@ -441,3 +441,25 @@ public class FooTest {
   const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
   assert.equal(v.length, 0);
 });
+
+test('MapGetResultNotNullChecked: no flag when guard and access on same line', async (t) => {
+  const src = `public class Foo {
+  public void run(Map<Id, Account> m, Id id) {
+    Account a = m.get(id);
+    if (a != null) { System.debug(a.Name); }
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  t.assert.strictEqual(v.length, 0);
+});
+
+test('SoqlResultNotNullChecked: no flag when guard and access on same line', async (t) => {
+  const src = `public class Foo {
+  public void run(Id id) {
+    Account a = [SELECT Name FROM Account WHERE Id = :id LIMIT 1];
+    if (a != null) { System.debug(a.Name); }
+  }
+}`;
+  const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
+  t.assert.strictEqual(v.length, 0);
+});
