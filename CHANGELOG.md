@@ -4,6 +4,26 @@ All notable changes to apex-lint are documented here.
 
 ---
 
+## [0.1.20] — 2026-06-27
+
+### Fixed
+- `ApexSOQLInjection` — `stripStringLiterals` now handles Apex escaped quotes (`\'`), so the canonical `Database.query('... = \'' + userInput + '\'')` injection is detected (escaped-quote false negative)
+- `DatabaseQueryWithVariable` — inline string concatenation (`'SELECT ' + x`) is no longer read as a static string (330 → 350 dynamic queries caught)
+- CRUD/FLS guards are now scoped to the DML statement's SObject — a guard on `Account` no longer silences DML on `Contact`; revived the dead `as user` guard
+- `MapGetWithoutNullCheck` / `MapGetResultNotNullChecked` — `List.get(index)` no longer misclassified as `Map.get()`; added `keySet()` and guard-before-assignment exclusions
+- `AvoidNonRestrictiveQueries` — uses parsed `WHERE`/`LIMIT` clauses instead of substring matching (fixes false negative on fields named like SOQL keywords)
+- `AvoidHardcodedId` — validates 18-char checksum / 15-char zero-padding, eliminating false positives on base64/random tokens
+- `TestWithoutAsserts` — recognizes mock-framework `.verify()` calls (80 → 8 violations on fflib)
+
+### Changed
+- `MapGetResultNotNullChecked` is now opt-in (info severity) — irreducibly noisy without type/dataflow analysis; runs only when named via `--rules`
+- CLI: `validate` honors `--format`/`--fail-on`, bounds-checks value flags, and the top-level handler maps usage/tool errors to exit code 2 (a bad `--fail-on` no longer silently disables CI)
+
+### Added
+- `pnpm test` (node `--test` via tsx) wired into CI and publish workflows; backfilled rule tests across nre/hardcoded/performance/style/security (88 passing)
+
+---
+
 ## [0.1.19] — 2026-06-27
 
 ### Fixed
