@@ -92,3 +92,15 @@ test('DatabaseQueryWithVariable: no flag for a fully static query', () => {
   const src = `public class Foo { List<Account> run() { return Database.query('SELECT Id FROM Account'); } }`;
   assert.equal(dqvViolations(src).length, 0);
 });
+
+test('ApexSOQLInjection: flags a tainted @AuraEnabled controller param reaching query', () => {
+  const src = `public class Ctrl {
+    @AuraEnabled
+    public static List<Account> search(String term) {
+      return Database.query('SELECT Id FROM Account WHERE Name = ' + term);
+    }
+  }`;
+  const v = violations(src);
+  assert.equal(v.length, 1);
+  assert.equal(v[0].severity, 'critical');
+});

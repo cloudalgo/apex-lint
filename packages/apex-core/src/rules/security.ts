@@ -1,5 +1,6 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, walk } from "../ast/walk.js";
+import { getTaint, SOQL_SANITIZERS as ENGINE_SOQL_SANITIZERS } from "../engine/taint.js";
 
 // ─── Intra-method taint analysis (PMD approach) ──────────────────────────────
 
@@ -302,7 +303,7 @@ export const apexSOQLInjection: Rule = {
   description: "User-controlled data flows into Database.query() — SOQL injection risk.",
   create(ctx) {
     function check(methodNode: any): void {
-      const tainted = buildTaintedVars(methodNode, TAINT_SOURCES, SOQL_SANITIZERS);
+      const { tainted } = getTaint(methodNode, ENGINE_SOQL_SANITIZERS);
       if (tainted.size === 0) return;
 
       walk(methodNode, (n) => {
@@ -310,8 +311,6 @@ export const apexSOQLInjection: Rule = {
         const t = textOf(n).toLowerCase();
         if (!t.startsWith("database.query(") && !t.startsWith("database.querywithbinds(")) return;
         const parenIdx = t.indexOf("(");
-        // Strip string literal contents: field names inside 'WHERE Id = :id'
-        // must not shadow tainted variable names or bind variable occurrences.
         const args = stripStringLiterals(t.substring(parenIdx + 1));
         for (const v of tainted) {
           if (hasWordRef(args, v)) {
