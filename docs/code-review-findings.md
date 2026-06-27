@@ -149,15 +149,13 @@ The originally-claimed pairs do not overlap in practice: across all 10 test-data
 
 ## Low / corrected
 
-### L1 🟡 `\bas user\b` guard alternative is dead code — but NOT a practical FP
-`packages/apex-core/src/rules/crud.ts:45`
-The original review claimed this causes false positives. **Corrected:** `GUARD_RE` is tested against `textOf(method)` (whitespace-stripped), so `\bas user\b` can never match — but the commonly-used guards `USER_MODE`, `SECURITY_ENFORCED`, and `stripInaccessible` survive (they contain `_` / no spaces) and **work correctly**.
-**Reproduced:** a `delete` guarded by `WITH USER_MODE` was correctly suppressed (no FP). Since bare `as user` is not valid Apex SOQL, the dead alternative has no real-world impact.
-**Fix:** drop the dead `\bas user\b` alternative (cosmetic), or match phrase guards against `ctx.source` if any space-bearing guard is ever needed.
+### L1 ✅ `\bas user\b` guard alternative was dead code — **FIXED (via H3)**
+`packages/apex-core/src/rules/crud.ts`
+The H3 CRUD-guard rework replaced `GUARD_RE` with `AGNOSTIC_GUARD_RE`, which matches the whitespace-stripped `asuser` form — so `insert as user records;` is now correctly recognized as a guard (the user-mode DML FP is gone).
 
-- ◽ **Category/severity vocabulary is inconsistent** across rule files (`error-prone` vs `best-practices` vs `security` for similar concerns). Tidy the catalog.
-- ◽ **`isTriggerSource` re-slices the whole source** for a regex test (`parser.ts:47`) — minor allocation nit on large files.
-- ◽ **CLI parses files synchronously and serially** (`cli.ts:234`) — ANTLR parsing is CPU-bound; worker-thread parallelism would scale on multi-core CI. No correctness impact.
+- ✅ **`isTriggerSource` re-slices the whole source** (`parser.ts`) — now probes a fixed 8-char window instead of slicing the entire remaining source. Trigger detection verified unchanged.
+- 🟡 **Category/severity vocabulary** — reviewed, **no change**. The 47 rules group sensibly (`ApexXSSFromEscapeFalse` in `security`, NRE rules in `error-prone`, the three complexity metrics in `design`, etc.). Categories are user-facing (drive `--categories` filtering and output grouping); re-shuffling them for subjective tidiness would break those for no correctness gain.
+- ◽ **CLI parses files synchronously and serially** (`cli.ts`) — **deferred.** Parsing is the dominant cost (~60%) and worker-thread parallelism would scale on multi-core CI, but the shared `FilesystemMetadataProvider` (a class with Maps, used by `UnguardedCrudOperation`) would need serialization or per-worker rebuild — meaningful complexity/risk for a no-correctness perf gain on a tool that's already acceptably fast. Recommend scoping as its own effort.
 
 ---
 

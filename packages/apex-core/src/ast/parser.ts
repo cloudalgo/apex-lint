@@ -44,7 +44,9 @@ function isTriggerSource(source: string): boolean {
       i = Math.min(i + 2, len);
       continue;
     }
-    return /^trigger\b/i.test(source.slice(i));
+    // Probe a fixed-length window ("trigger" = 7 chars + 1 for the \b boundary)
+    // rather than slicing the whole remaining source.
+    return /^trigger\b/i.test(source.slice(i, i + 8));
   }
   return false;
 }
