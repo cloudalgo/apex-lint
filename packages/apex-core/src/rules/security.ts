@@ -5,28 +5,6 @@ import { getTaint, SOQL_SANITIZERS as ENGINE_SOQL_SANITIZERS, XSS_SANITIZERS as 
 // ─── Intra-method taint analysis (PMD approach) ──────────────────────────────
 
 /**
- * Known user-controlled taint sources in Apex.
- * All patterns are lowercased for matching against textOf() output.
- */
-const TAINT_SOURCES = [
-  "currentpage().getparameters().get(",     // VF page parameters
-  "currentpage().getparameters()",           // all VF parameters
-  "apexpages.currentpage().getparameters()", // explicit namespace
-  "system.currentpagereference().getparameters()",
-  "restcontext.request.requestbody",         // REST API body
-  "restcontext.request.params",              // REST API query params
-  "restcontext.request",                     // REST context broadly
-  "cookie.getvalue(",                        // cookie values
-  "url.getcurrentrequesturl(",               // current URL
-];
-
-/** Sanitizers that remove SOQL taint. */
-const SOQL_SANITIZERS = [
-  "string.escapesinglequotes(",
-  "escapesinglequotes(",
-];
-
-/**
  * True if `varName` appears as a whole word (not as a substring of a longer
  * identifier) in `text`. Both are expected to be already lowercased.
  */
@@ -57,75 +35,6 @@ function hasWordRef(text: string, varName: string): boolean {
  */
 function stripStringLiterals(s: string): string {
   return s.replace(/'(?:[^'\\]|\\.)*'/g, "''");
-}
-
-/**
- * Intra-method taint analysis — PMD-style forward propagation.
- *
- * Two-phase per iteration:
- *   1. AST walk for VariableDeclaratorContext nodes (handles `Type x = expr`)
- *      — extracts variable name from `.id()` so no type-prefix confusion
- *   2. Text scan (textOf split by `;`) for re-assignments (`x = expr`)
- *      — handles reassignment to already-declared variables
- *
- * Iterates to fixed point (≤5 passes) to handle chained assignments
- * (a = source; b = a; c = b → all three become tainted).
- */
-function buildTaintedVars(
-  methodNode: any,
-  sources: string[],
-  sanitizers: string[],
-): Set<string> {
-  const tainted = new Set<string>();
-
-  function isTaintedRhs(rhs: string): boolean {
-    if (sanitizers.some(s => rhs.includes(s))) return false; // sanitizer applied
-    if (sources.some(s => rhs.includes(s))) return true;
-    return [...tainted].some(v => hasWordRef(rhs, v));
-  }
-
-  for (let pass = 0; pass < 5; pass++) {
-    const sizeBefore = tainted.size;
-
-    // Phase 1 — AST: local variable declarations (`Type varName = expr`)
-    // VariableDeclaratorContext.id() gives the exact variable name without the type prefix
-    walk(methodNode, (n) => {
-      if (nodeType(n) !== "VariableDeclaratorContext" || !(n as any).id) return;
-      const name = textOf((n as any).id()).toLowerCase();
-      if (tainted.has(name)) return;
-      const full = textOf(n).toLowerCase();
-      const eqIdx = full.indexOf("=");
-      if (eqIdx < 0) return;
-      const init = full.substring(eqIdx + 1);
-      if (isTaintedRhs(init)) tainted.add(name);
-    });
-
-    // Phase 2 — Text: re-assignments to existing vars (`varName = newExpr`)
-    // Split the full method text by ';' for rough statement boundaries.
-    // We only accept LHS that is a PURE identifier (no dots/brackets) to avoid
-    // incorrectly treating `obj.field = x` as tainting a local var named `field`.
-    const methodText = textOf(methodNode).toLowerCase();
-    for (const stmt of methodText.split(";")) {
-      const eqIdx = stmt.indexOf("=");
-      if (eqIdx <= 0) continue;
-      const pre = stmt[eqIdx - 1];
-      const post = eqIdx + 1 < stmt.length ? stmt[eqIdx + 1] : "";
-      // Skip ==, !=, <=, >=, +=, -=, *=, /=, &=, |=, ^=
-      if (post === "=" || "!<>+-*/%&|^".includes(pre)) continue;
-      const lhs = stmt.substring(0, eqIdx);
-      if (lhs.includes(".") || lhs.includes("[")) continue; // field/index access
-      const varMatch = lhs.match(/^([a-z_][a-z0-9_]*)$/);
-      if (!varMatch) continue; // not a bare identifier
-      const varName = varMatch[1];
-      if (tainted.has(varName)) continue;
-      const rhs = stmt.substring(eqIdx + 1);
-      if (isTaintedRhs(rhs)) tainted.add(varName);
-    }
-
-    if (tainted.size === sizeBefore) break; // fixed point
-  }
-
-  return tainted;
 }
 
 // ─── ApexSharingViolations helpers ───────────────────────────────────────────
@@ -351,9 +260,6 @@ function isInsideTestContext(node: any): boolean {
   return false;
 }
 
-/** URL sanitizers — encoding a URL does not prevent redirect, but these are common safe patterns. */
-const REDIRECT_SANITIZERS: string[] = [];
-
 /**
  * Tainted URL value flows into new PageReference() — open redirect.
  *
@@ -430,13 +336,6 @@ export const apexSSRF: Rule = {
     return { MethodDeclarationContext: check, ConstructorDeclarationContext: check };
   },
 };
-
-/** XSS sanitizers for page output context. */
-const XSS_SANITIZERS = [
-  "string.escapehtml4(",
-  "string.escapehtml3(",
-  "encodingutil.htmlencode(",
-];
 
 /**
  * User-controlled data flows into a Visualforce page message — XSS via reflected parameter.
