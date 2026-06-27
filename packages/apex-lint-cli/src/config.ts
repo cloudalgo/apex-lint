@@ -66,48 +66,80 @@ export const DEFAULT_CONFIG: ApexLintConfig = {
 };
 
 const CONFIG_NAMES = ["apexlint.config.json", ".apexlintrc.json"];
+const STRING_ARRAY_FIELDS = ["rules", "disabledRules", "excludeRules", "categories", "metadataRoots", "excludePaths"] as const;
+const SEVERITIES = ["critical", "high", "moderate", "low", "info"];
+
+/** `cwd` and each of its ancestors up to the filesystem root. */
+function ancestorDirs(cwd: string): string[] {
+  const dirs: string[] = [];
+  let dir = resolve(cwd);
+  for (;;) {
+    dirs.push(dir);
+    const parent = dirname(dir);
+    if (parent === dir) return dirs;
+    dir = parent;
+  }
+}
+
+/** Validate the shape of a parsed config object; throw a clear error on mismatch. */
+function validateConfig(raw: unknown, path: string): asserts raw is Record<string, unknown> {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`Invalid config ${path}: expected a JSON object.`);
+  }
+  const r = raw as Record<string, unknown>;
+  for (const f of STRING_ARRAY_FIELDS) {
+    const v = r[f];
+    if (v !== undefined && !(Array.isArray(v) && v.every((x) => typeof x === "string"))) {
+      throw new Error(`Invalid config ${path}: "${f}" must be an array of strings.`);
+    }
+  }
+  const so = r.severityOverrides;
+  if (so !== undefined && (typeof so !== "object" || so === null || Array.isArray(so))) {
+    throw new Error(`Invalid config ${path}: "severityOverrides" must be an object.`);
+  }
+  if (r.maxViolationsPerFile !== undefined && typeof r.maxViolationsPerFile !== "number") {
+    throw new Error(`Invalid config ${path}: "maxViolationsPerFile" must be a number.`);
+  }
+  if (r.failOn !== undefined && (typeof r.failOn !== "string" || !SEVERITIES.includes(r.failOn))) {
+    throw new Error(`Invalid config ${path}: "failOn" must be one of ${SEVERITIES.join(" | ")}.`);
+  }
+}
 
 /**
  * Load config from:
  * 1. Explicit file path (--config flag)
- * 2. Config file in cwd
- * 3. Config file in the directory of each scan path (first match wins)
+ * 2. Nearest config file in cwd or an ancestor directory (project-scoped — never
+ *    a config inside a scanned target dir, which could apply third-party rules).
  */
 export function loadConfig(
   cwd: string,
   explicitFile?: string,
-  scanPaths?: string[],
 ): { config: ApexLintConfig; path?: string } {
-  const searchDirs = [cwd];
-  for (const p of scanPaths ?? []) {
-    const d = resolve(p);
-    const dir = existsSync(d) && !d.endsWith(".cls") && !d.endsWith(".trigger") ? d : dirname(d);
-    if (!searchDirs.includes(dir)) searchDirs.push(dir);
-  }
-
   const candidates = explicitFile
     ? [explicitFile]
-    : searchDirs.flatMap((dir) => CONFIG_NAMES.map((n) => join(dir, n)));
+    : ancestorDirs(cwd).flatMap((dir) => CONFIG_NAMES.map((n) => join(dir, n)));
 
   for (const p of candidates) {
     if (existsSync(p)) {
+      let raw: unknown;
       try {
-        const raw = JSON.parse(readFileSync(p, "utf8"));
-        const config: ApexLintConfig = {
-          rules: raw.rules,
-          disabledRules: raw.disabledRules ?? [],
-          excludeRules: raw.excludeRules,
-          categories: raw.categories,
-          severityOverrides: raw.severityOverrides ?? {},
-          metadataRoots: raw.metadataRoots ?? [],
-          excludePaths: raw.excludePaths,
-          maxViolationsPerFile: raw.maxViolationsPerFile,
-          failOn: raw.failOn,
-        };
-        return { config, path: p };
+        raw = JSON.parse(readFileSync(p, "utf8"));
       } catch (e) {
         throw new Error(`Failed to parse ${p}: ${(e as Error).message}`);
       }
+      validateConfig(raw, p);
+      const config: ApexLintConfig = {
+        rules: raw.rules as string[] | undefined,
+        disabledRules: (raw.disabledRules as string[]) ?? [],
+        excludeRules: raw.excludeRules as string[] | undefined,
+        categories: raw.categories as string[] | undefined,
+        severityOverrides: (raw.severityOverrides as Record<string, Severity>) ?? {},
+        metadataRoots: (raw.metadataRoots as string[]) ?? [],
+        excludePaths: raw.excludePaths as string[] | undefined,
+        maxViolationsPerFile: raw.maxViolationsPerFile as number | undefined,
+        failOn: raw.failOn as Severity | undefined,
+      };
+      return { config, path: p };
     }
   }
   return { config: { ...DEFAULT_CONFIG } };

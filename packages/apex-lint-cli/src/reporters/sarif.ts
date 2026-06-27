@@ -19,6 +19,7 @@ export function reportSarif(
   violations: Violation[],
   rules: Rule[],
   cwd: string,
+  version: string,
 ): string {
   const ruleIndex = new Map<string, number>();
   const sarifRules = rules.map((r, i) => {
@@ -32,26 +33,31 @@ export function reportSarif(
     };
   });
 
-  const results = violations.map((v) => ({
-    ruleId: v.ruleId,
-    ruleIndex: ruleIndex.get(v.ruleId) ?? 0,
-    level: SARIF_LEVEL[v.severity],
-    message: { text: v.message },
-    locations: [
-      {
-        physicalLocation: {
-          artifactLocation: {
-            uri: toUri(v.file ?? "<input>", cwd),
-          },
-          region: {
-            startLine: v.line || 1,
-            startColumn: (v.column ?? 0) + 1,
-            ...(v.endLine ? { endLine: v.endLine } : {}),
+  const results = violations.map((v) => {
+    const idx = ruleIndex.get(v.ruleId);
+    return {
+      ruleId: v.ruleId,
+      // Omit ruleIndex when the rule isn't in this run's rule set — a bogus
+      // index would point the SARIF result at the wrong rule definition.
+      ...(idx !== undefined ? { ruleIndex: idx } : {}),
+      level: SARIF_LEVEL[v.severity],
+      message: { text: v.message },
+      locations: [
+        {
+          physicalLocation: {
+            artifactLocation: {
+              uri: toUri(v.file ?? "<input>", cwd),
+            },
+            region: {
+              startLine: v.line || 1,
+              startColumn: (v.column ?? 0) + 1,
+              ...(v.endLine ? { endLine: v.endLine } : {}),
+            },
           },
         },
-      },
-    ],
-  }));
+      ],
+    };
+  });
 
   const sarif = {
     $schema:
@@ -63,7 +69,7 @@ export function reportSarif(
           driver: {
             name: "apex-lint",
             informationUri: "https://github.com/cloudalgo/apex-lint",
-            version: "0.1.0",
+            version,
             rules: sarifRules,
           },
         },

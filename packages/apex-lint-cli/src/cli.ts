@@ -227,7 +227,7 @@ function main(): void {
     process.exit(2);
   }
 
-  const { config, path: cfgPath } = loadConfig(cwd, args.configPath, args.paths);
+  const { config, path: cfgPath } = loadConfig(cwd, args.configPath);
 
   const rules = selectRules(allRules, config, {
     rules: args.rules,
@@ -289,7 +289,7 @@ function main(): void {
   if (args.format === "json") {
     emit(reportJson(all) + "\n");
   } else if (args.format === "sarif") {
-    emit(reportSarif(all, rules, cwd) + "\n");
+    emit(reportSarif(all, rules, cwd, CURRENT_VERSION) + "\n");
   } else {
     if (cfgPath) process.stderr.write(`Using config: ${cfgPath}\n`);
     const suppNote = totalSuppressed > 0 ? `, ${totalSuppressed} suppressed` : "";
