@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Linter } from '../../src/engine/engine.js';
 import type { Violation } from '../../src/engine/types.js';
-import { mapGetWithoutNullCheck, soqlResultIndexWithoutCheck, triggerContextNullAccess, chainedRelationshipAccess } from '../../src/rules/nre.js';
+import { mapGetWithoutNullCheck, soqlResultIndexWithoutCheck, triggerContextNullAccess, chainedRelationshipAccess, soqlResultNotNullChecked } from '../../src/rules/nre.js';
 
 function violations(source: string): Violation[] {
   return new Linter([mapGetWithoutNullCheck]).lint(source).violations;
@@ -268,5 +268,83 @@ public class FooTest {
   }
 }`;
   const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+// ─── SoqlResultNotNullChecked ─────────────────────────────────────────────────
+
+test('SoqlResultNotNullChecked: flags variable access after LIMIT 1 assignment', () => {
+  const src = `
+public class Foo {
+  public void run(Id someId) {
+    Account a = [SELECT Name FROM Account WHERE Id = :someId LIMIT 1];
+    System.debug(a.Name);
+  }
+}`;
+  const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 1);
+  assert.equal(v[0].ruleId, 'SoqlResultNotNullChecked');
+});
+
+test('SoqlResultNotNullChecked: no flag when null check precedes access', () => {
+  const src = `
+public class Foo {
+  public void run(Id someId) {
+    Account a = [SELECT Name FROM Account WHERE Id = :someId LIMIT 1];
+    if (a != null) {
+      System.debug(a.Name);
+    }
+  }
+}`;
+  const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('SoqlResultNotNullChecked: no flag for SOQL without LIMIT 1', () => {
+  const src = `
+public class Foo {
+  public void run() {
+    List<Account> accs = [SELECT Name FROM Account];
+    System.debug(accs[0].Name);
+  }
+}`;
+  const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('SoqlResultNotNullChecked: no flag when safe nav used on the variable', () => {
+  const src = `
+public class Foo {
+  public void run(Id someId) {
+    Account a = [SELECT Name FROM Account WHERE Id = :someId LIMIT 1];
+    String name = a?.Name;
+  }
+}`;
+  const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('SoqlResultNotNullChecked: no flag when variable is not dereferenced', () => {
+  const src = `
+public class Foo {
+  public void run(Id someId) {
+    Account a = [SELECT Name FROM Account WHERE Id = :someId LIMIT 1];
+    System.debug(a);
+  }
+}`;
+  const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('SoqlResultNotNullChecked: skips @IsTest classes', () => {
+  const src = `
+@IsTest
+public class FooTest {
+  static testMethod void run() {
+    Account a = [SELECT Name FROM Account LIMIT 1];
+    System.debug(a.Name);
+  }
+}`;
+  const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
   assert.equal(v.length, 0);
 });

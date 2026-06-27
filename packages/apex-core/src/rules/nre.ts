@@ -1,5 +1,5 @@
 import type { Rule } from "../engine/types.js";
-import { nodeType, textOf, lineOf } from "../ast/walk.js";
+import { nodeType, textOf, lineOf, walk } from "../ast/walk.js";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -288,6 +288,90 @@ export const chainedRelationshipAccess: Rule = {
           node,
           `Multi-level sObject chain '${text}' — use ?. for each relationship hop or verify the field was queried.`,
         );
+      },
+    };
+  },
+};
+
+// ─── SoqlResultNotNullChecked ─────────────────────────────────────────────────
+
+/**
+ * Detects sObject variable assigned from a LIMIT 1 SOQL query and subsequently
+ * accessed without an intervening null check. LIMIT 1 returns null (not empty list)
+ * when assigned to an sObject type — so field access without a null check is a NRE.
+ *
+ * Detection is intra-method using source line analysis. Suppressed when:
+ * - The access uses safe navigation (?.)
+ * - A null check for that variable precedes the access in source
+ */
+export const soqlResultNotNullChecked: Rule = {
+  id: "SoqlResultNotNullChecked",
+  category: "error-prone",
+  severity: "moderate",
+  description: "Variable assigned from LIMIT 1 SOQL may be null — access without null check is an NRE risk.",
+  create(ctx) {
+    // Map: variable name (lowercase) → 1-based line number of the assignment
+    const soqlVars = new Map<string, number>();
+    const sourceLines = ctx.source.split("\n");
+
+    return {
+      MethodDeclarationContext: (_node) => {
+        // Clear per-method to avoid inter-method false positives.
+        soqlVars.clear();
+      },
+
+      VariableDeclaratorContext: (node) => {
+        if (isInsideTestClass(node)) return;
+        // Check whether the initializer contains a QueryContext with LIMIT 1.
+        const expr = node.expression ? node.expression() : null;
+        if (!expr) return;
+        let hasLimitOneQuery = false;
+        walk(expr, (child) => {
+          if (nodeType(child) === "QueryContext") {
+            // textOf strips whitespace: "LIMIT1" is what we look for.
+            if (textOf(child).toLowerCase().includes("limit1")) hasLimitOneQuery = true;
+          }
+        });
+        if (!hasLimitOneQuery) return;
+
+        // Extract the declared variable name via node.id().
+        const idNode = node.id ? node.id() : null;
+        const varName = idNode ? textOf(idNode) : "";
+        if (!varName) return;
+
+        const line = node.start?.line ?? 0;
+        soqlVars.set(varName.toLowerCase(), line);
+      },
+
+      DotExpressionContext: (node) => {
+        if (isInsideTestClass(node)) return;
+        if (soqlVars.size === 0) return;
+        const text = textOf(node);
+        const textLower = text.toLowerCase();
+
+        for (const [varName, assignLine] of soqlVars) {
+          // Must start with varName. (field access or method call)
+          if (!textLower.startsWith(varName + ".")) continue;
+          // Safe navigation (?.) means developer already guards — no flag.
+          if (text.includes("?.")) continue;
+
+          const accessLine = node.start?.line ?? 0;
+          // Look for a null check for this variable in the source lines
+          // between the assignment and the current access (exclusive of both).
+          const between = sourceLines.slice(assignLine, accessLine - 1).join("\n").toLowerCase();
+          const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const guardPattern = new RegExp(
+            `(?:${escaped}\\s*!=\\s*null|null\\s*!=\\s*${escaped}|${escaped}\\s*==\\s*null|null\\s*==\\s*${escaped})`,
+          );
+          if (guardPattern.test(between)) continue;
+
+          ctx.report(
+            node,
+            `'${varName}' was assigned from a LIMIT 1 SOQL query and may be null — add a null check or use ?.`,
+          );
+          // Only report once per variable per access site.
+          break;
+        }
       },
     };
   },
