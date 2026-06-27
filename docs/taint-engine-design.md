@@ -31,7 +31,7 @@ Standard taint-tracking model. Critically, this is **taint tracking, not value-o
 
 ### Sources
 - **Expression sources** (kept from today): `ApexPages.currentPage().getParameters()` / `.get(...)`, `System.currentPageReference().getParameters()`, `RestContext.request` (`.params`, `.requestBody`, broadly), `Cookie.getValue(...)`, `URL.getCurrentRequestUrl(...)`.
-- **Entry-point parameters** (new): every formal parameter of a method that is a **remote entry point** — annotated `@AuraEnabled`, modifier `webservice`, in an `@RestResource` class and annotated `@HttpGet/@HttpPost/@HttpPut/@HttpPatch/@HttpDelete`, or `@InvocableMethod`. **All parameter types** seed (not just `String`): `Id`, `Object`, `List<…>`, `Map<…>`, sObject — any can carry injectable content. Plain public/private helper params do **not** seed.
+- **Entry-point parameters** (new, recall-first): every formal parameter of any method whose modifiers include **`public`, `global`, or `webservice`**. This deliberately covers the whole externally-reachable surface — controllers, services, and the remote forms (`@AuraEnabled`/`webservice`/REST/`@InvocableMethod` methods are public or global, so they are included as a subset). **All parameter types** seed (not just `String`): `Id`, `Object`, `List<…>`, `Map<…>`, sObject — any can carry injectable content. Methods with no access modifier (effectively private) and `private`/`protected` methods do **not** seed. Per the "recall all public and global methods" directive; will surface safe-by-construction findings — accepted.
 - **Recall bias (Semgrep `exact:false` semantics):** a source taints not just the exact match but the **subexpression** it appears in.
 
 ### Propagators
@@ -87,9 +87,9 @@ Effectiveness is the priority, but the shared cache yields a free speed win: tai
 
 ## 6. Testing
 
-- **Unit — `tests/engine/taint.test.ts`:** each source kind seeds; each propagator carries taint (assignment, concat, `String.format`, `String.join`, collection get); `escapeSingleQuotes` and `:bind` clear taint; an **unrecognized wrapper does NOT** clear taint; entry-point params (each annotation form) seed; **non-entry-point params do NOT** seed.
-- **Per-rule sink — extend `tests/rules/security.test.ts`:** the existing 9 cases must still pass; add `@AuraEnabled`/`webservice`/REST-param → query cases; add open-redirect / SSRF / XSS sink cases mirroring the SOQL ones.
-- **Fixtures:** keep `fixtures/security-samples/SoqlInjectionSample.cls`; add an `@AuraEnabled`-param injection sample.
+- **Unit — `tests/engine/taint.test.ts`:** each source kind seeds; each propagator carries taint (assignment, concat, `String.format`, `String.join`, collection get); `escapeSingleQuotes` and `:bind` clear taint; an **unrecognized wrapper does NOT** clear taint; params of `public`/`global`/`webservice` methods seed (incl. `@AuraEnabled`); **`private`/no-modifier method params do NOT** seed.
+- **Per-rule sink — extend `tests/rules/security.test.ts`:** the existing 9 cases must still pass; add public/global-method-param → query cases (incl. an `@AuraEnabled` controller); add open-redirect / SSRF / XSS sink cases mirroring the SOQL ones.
+- **Fixtures:** keep `fixtures/security-samples/SoqlInjectionSample.cls`; add a public-controller-param injection sample (`@AuraEnabled`).
 - **Regression gate (12 test-data repos):** existing finding counts for the 4 rules must not *decrease* (no new FNs) and any *increase* must be sampled and confirmed to be genuine entry-point findings, not noise. `pnpm test` stays green.
 
 ## 7. Rollout
