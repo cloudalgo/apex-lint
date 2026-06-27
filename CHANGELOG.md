@@ -13,10 +13,20 @@ All notable changes to apex-lint are documented here.
 ### Fixed
 - Taint false positives trimmed via type filter + sink-side sanitizer detection
 - String literals are stripped before taint matching in XSS/SSRF sinks (escaped-quote false positives)
+- `UnusedPrivateMethod` — chained calls (`a.b().c()`) no longer hide the invoked method, removing the false positive
+- `FutureMethodChaining` — qualified calls (`Type.asyncMethod()`) are now resolved, fixing a false negative
+- CLI SARIF reporter emits the real package version and omits `ruleIndex` for rules absent from the run's rule set
+- CLI config validation and config-file discovery are now scoped to ancestor directories
+- `semverGt` handles prerelease/build metadata tags correctly; the npm update check is gated on `CI` / `NO_UPDATE_NOTIFIER` and bounded by a timeout
+- `FilesystemMetadataProvider` guards against symlink cycles during directory traversal
 
 ### Changed
 - Removed per-rule `buildTaintedVars`; taint is served entirely by `engine/taint.ts`
 - De-duplicated `stripStringLiterals` / `hasWordRef` — security rules import them from the taint engine
+- Extracted shared test-detection predicates (`isTestClass`, `isInsideTestClass`, `isTestMethod`, `hasAnnotation`) to `ast/apex-helpers.ts`, replacing copy-pasted variants across rules (with unit tests)
+
+### Performance
+- `isTriggerSource` probes a fixed leading window instead of slicing the whole source file
 
 ## [0.1.20] — 2026-06-27
 
