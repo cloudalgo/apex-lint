@@ -430,8 +430,9 @@ export const mapGetResultNotNullChecked: Rule = {
         const exprText = textOf(expr).toLowerCase();
         // Must contain .get( to be a candidate
         if (!exprText.includes(".get(")) return;
+        // Exclude `this.get()` / `super.get()` — instance methods named get, not Map.get()
+        if (exprText.includes("this.get(") || exprText.includes("super.get(")) return;
         // Exclude common non-Map .get() patterns (Schema describe methods, etc.)
-        // These all lack a meaningful key argument or use a different signature.
         if (
           exprText.includes(".getdescribe(") ||
           exprText.includes(".getsobjecttype(") ||
