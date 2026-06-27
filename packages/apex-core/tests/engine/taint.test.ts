@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseApex } from '../../src/ast/parser.js';
 import { walk, nodeType } from '../../src/ast/walk.js';
-import { isEntryPoint, entryPointParamNames, getTaint, TAINT_SOURCES, SOQL_SANITIZERS } from '../../src/engine/taint.js';
+import { isEntryPoint, entryPointParamNames, getTaint, isInjectableType, TAINT_SOURCES, SOQL_SANITIZERS } from '../../src/engine/taint.js';
 
 function methods(src: string): any[] {
   const { tree } = parseApex(src);
@@ -71,4 +71,34 @@ test('getTaint: private method params are NOT tainted', () => {
 test('getTaint: result is cached (same object for same node + sanitizers)', () => {
   const m = firstMethod(`public class C { public void run(String t){} }`);
   assert.strictEqual(getTaint(m, SOQL_SANITIZERS), getTaint(m, SOQL_SANITIZERS));
+});
+
+test('isInjectableType: String/Object and string-bearing collections only', () => {
+  for (const t of ['String', 'Object', 'List<String>', 'Set<Object>', 'Map<String,Account>', 'Map<Id,String>'])
+    assert.equal(isInjectableType(t), true, `${t} should be injectable`);
+  for (const t of ['Id', 'Integer', 'Long', 'Decimal', 'Boolean', 'Date', 'Datetime', 'Blob', 'Account', 'List<Account>', 'MyString__c', 'Map<Id,Account>'])
+    assert.equal(isInjectableType(t), false, `${t} should NOT be injectable`);
+});
+
+test('getTaint: only injectable-typed params are seeded', () => {
+  const m = firstMethod(`public class C { public void run(String term, Id who, Integer n, List<Account> recs, List<String> tags){} }`);
+  const { tainted } = getTaint(m, SOQL_SANITIZERS);
+  assert.ok(tainted.has('term'));
+  assert.ok(tainted.has('tags'));
+  assert.equal(tainted.has('who'), false);
+  assert.equal(tainted.has('n'), false);
+  assert.equal(tainted.has('recs'), false);
+});
+
+test('getTaint: non-injectable local declarations are not tainted', () => {
+  const m = firstMethod(`public class C { public void run(String term){
+    Boolean b = (term == 'x');
+    Integer len = term.length();
+    String s = term + '!';
+  }}`);
+  const { tainted } = getTaint(m, SOQL_SANITIZERS);
+  assert.ok(tainted.has('term'));
+  assert.ok(tainted.has('s'));
+  assert.equal(tainted.has('b'), false);
+  assert.equal(tainted.has('len'), false);
 });

@@ -205,6 +205,30 @@ export const apexSharingViolations: Rule = {
  * Sanitizer: String.escapeSingleQuotes() removes taint on the result.
  * PMD: ApexSOQLInjection
  */
+
+/**
+ * Remove `escapeSingleQuotes(...)` calls (and their arguments) from sink text so
+ * a value escaped AT THE SINK — the recommended `Database.query(escapeSingleQuotes(q) + ':bind')`
+ * pattern — is not reported. Balanced-paren matching handles nested calls.
+ */
+function stripSoqlSanitizers(s: string): string {
+  let out = s;
+  for (const fn of ["string.escapesinglequotes(", "escapesinglequotes("]) {
+    let idx: number;
+    while ((idx = out.indexOf(fn)) >= 0) {
+      let depth = 1;
+      let j = idx + fn.length;
+      while (j < out.length && depth > 0) {
+        if (out[j] === "(") depth++;
+        else if (out[j] === ")") depth--;
+        j++;
+      }
+      out = out.slice(0, idx) + out.slice(j);
+    }
+  }
+  return out;
+}
+
 export const apexSOQLInjection: Rule = {
   id: "ApexSOQLInjection",
   category: "security",
@@ -220,7 +244,7 @@ export const apexSOQLInjection: Rule = {
         const t = textOf(n).toLowerCase();
         if (!t.startsWith("database.query(") && !t.startsWith("database.querywithbinds(")) return;
         const parenIdx = t.indexOf("(");
-        const args = stripStringLiterals(t.substring(parenIdx + 1));
+        const args = stripStringLiterals(stripSoqlSanitizers(t.substring(parenIdx + 1)));
         for (const v of tainted) {
           if (hasWordRef(args, v)) {
             ctx.report(n, `Tainted variable "${v}" from user-controlled input reaches Database.query() — use bind variables (:var) or String.escapeSingleQuotes() to prevent injection.`);

@@ -28,6 +28,22 @@ export function entryPointParamNames(methodNode: any): string[] {
   return names;
 }
 
+// A type carries injectable content only if it is (or contains a type argument
+// of) String/Object. Matches `String`, `Object`, `List<String>`, `Set<Object>`,
+// `Map<String,Account>`, etc.; rejects `Id`, numeric/temporal primitives, sObjects,
+// and sObject collections — none of which can carry SOQL/HTML/URL syntax.
+const INJECTABLE_TYPE = /(?:^|[<,])(?:string|object)(?:$|[>,])/;
+
+/**
+ * True if a value of this declared type can carry attacker-controlled string
+ * content concatenable into a sink. Used to skip seeding non-injectable params
+ * (e.g. `Id`, `Integer`, `List<Account>`) and non-injectable local declarations
+ * (e.g. `Boolean b = (term == 'x')`), trimming safe-by-construction findings.
+ */
+export function isInjectableType(typeText: string): boolean {
+  return INJECTABLE_TYPE.test(typeText.toLowerCase().replace(/\s+/g, ""));
+}
+
 export const TAINT_SOURCES = [
   "currentpage().getparameters().get(",
   "currentpage().getparameters()",
@@ -82,13 +98,27 @@ export function getTaint(methodNode: any, sanitizers: string[]): TaintResult {
 function computeTaint(methodNode: any, sanitizers: string[]): TaintResult {
   const tainted = new Set<string>();
   const entry = isEntryPoint(methodNode);
-  if (entry) for (const p of entryPointParamNames(methodNode)) tainted.add(p.toLowerCase());
+  // Seed only entry-point params whose type can carry injectable content.
+  if (entry) {
+    const fp = methodNode?.formalParameters ? methodNode.formalParameters() : null;
+    if (fp) {
+      walk(fp, (p) => {
+        if (nodeType(p) !== "FormalParameterContext" || !p.id || !p.typeRef) return;
+        if (isInjectableType(textOf(p.typeRef()))) tainted.add(textOf(p.id()).toLowerCase());
+      });
+    }
+  }
 
   // Collect assignment steps from the AST in document order (one walk, no text split).
   const steps: { name: string; rhs: string }[] = [];
   walk(methodNode, (n) => {
     const t = nodeType(n);
     if (t === "VariableDeclaratorContext" && n.id) {
+      // Skip declarations whose declared type cannot carry injectable content
+      // (e.g. `Boolean b = (term == 'x')`, `Integer n = term.length()`).
+      const ldecl = n.parentCtx?.parentCtx;
+      const declType = ldecl?.typeRef ? textOf(ldecl.typeRef()) : "";
+      if (declType && !isInjectableType(declType)) return;
       const name = textOf(n.id()).toLowerCase();
       const full = textOf(n).toLowerCase();
       const eq = full.indexOf("=");

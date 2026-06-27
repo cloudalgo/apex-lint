@@ -134,3 +134,19 @@ test('ApexXSSFromURLParam: no flag when a literal arg merely contains the param 
   const v = new Linter([apexXSSFromURLParam]).lint(src).violations;
   assert.equal(v.length, 0);
 });
+
+test('ApexSOQLInjection: no flag when the tainted value is escaped at the sink', () => {
+  const src = `public class C { public List<SObject> run(String objectName) {
+    String q = 'SELECT Id FROM ' + objectName + ' WHERE Id IN ';
+    return Database.query(String.escapeSingleQuotes(q) + ':ids');
+  }}`;
+  assert.equal(violations(src).length, 0);
+});
+
+test('ApexSOQLInjection: still flags an unescaped ORDER BY built from a param', () => {
+  const src = `public class C { public List<SObject> run(String sortBy) {
+    String q = 'SELECT Id FROM Account ORDER BY ' + sortBy;
+    return Database.query(q);
+  }}`;
+  assert.equal(violations(src).length, 1);
+});
