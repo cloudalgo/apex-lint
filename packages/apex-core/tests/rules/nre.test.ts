@@ -463,3 +463,40 @@ test('SoqlResultNotNullChecked: no flag when guard and access on same line', asy
   const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
   t.assert.strictEqual(v.length, 0);
 });
+
+test('MapGetResultNotNullChecked: no flag for List.get(index) assignment', () => {
+  const src = `
+public class Foo {
+  public void run(List<Account> accounts) {
+    Account a = accounts.get(0);
+    String name = a.Name;
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('SoqlResultNotNullChecked: no flag when tracked var is shadowed in constructor', () => {
+  // A LIMIT 1 var in a method is not tracked into the constructor scope.
+  // In the constructor, a fresh Account is declared — no NRE risk.
+  const src = `
+public class Foo {
+  public void run(Id someId) {
+    Account a = [SELECT Name FROM Account WHERE Id = :someId LIMIT 1];
+  }
+  public Foo() {
+    Account a = new Account();
+    System.debug(a.Name);
+  }
+}`;
+  const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('TriggerContextNullAccess: no duplicate for Trigger.old accessed twice on same line', () => {
+  const src = `trigger AccTrigger on Account (before insert) {
+  if (Trigger.old != null && !Trigger.old.isEmpty()) { }
+}`;
+  const v = new Linter([triggerContextNullAccess]).lint({ source: src, filePath: 'AccTrigger.trigger' }).violations;
+  assert.ok(v.length <= 1, `Expected at most 1 violation, got ${v.length}`);
+});

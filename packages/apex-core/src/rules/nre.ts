@@ -324,6 +324,11 @@ export const soqlResultNotNullChecked: Rule = {
         reportedVarLines.clear();
       },
 
+      ConstructorDeclarationContext: (_node) => {
+        soqlVars.clear();
+        reportedVarLines.clear();
+      },
+
       VariableDeclaratorContext: (node) => {
         if (isInsideTestClass(node)) return;
         // Check whether the initializer contains a QueryContext with LIMIT 1.
@@ -422,6 +427,11 @@ export const mapGetResultNotNullChecked: Rule = {
         reportedVarLines.clear();
       },
 
+      ConstructorDeclarationContext: (_node) => {
+        mapGetVars.clear();
+        reportedVarLines.clear();
+      },
+
       VariableDeclaratorContext: (node) => {
         if (isInsideTestClass(node)) return;
         const expr = node.expression ? node.expression() : null;
@@ -432,6 +442,8 @@ export const mapGetResultNotNullChecked: Rule = {
         if (!exprText.includes(".get(")) return;
         // Exclude `this.get()` / `super.get()` — instance methods named get, not Map.get()
         if (exprText.includes("this.get(") || exprText.includes("super.get(")) return;
+        // Skip List.get(index) — numeric argument means this is List access, not Map.get()
+        if (/\.get\(\d+\)/i.test(exprText)) return;
         // Exclude common non-Map .get() patterns (Schema describe methods, etc.)
         if (
           exprText.includes(".getdescribe(") ||
@@ -524,16 +536,21 @@ export const triggerContextNullAccess: Rule = {
 
     if (!insertOnly && !deleteOnly) return {};
 
+    const reportedLines = new Set<number>();
+
     return {
       DotExpressionContext: (node) => {
         const text = textOf(node).toLowerCase();
-        if (insertOnly && text.startsWith("trigger.old")) {
+        const line = lineOf(node);
+        if (insertOnly && text.startsWith("trigger.old") && !reportedLines.has(line)) {
+          reportedLines.add(line);
           ctx.report(
             node,
             "Trigger.old is null on INSERT events — this trigger is INSERT-only, so Trigger.old will always be null here.",
           );
         }
-        if (deleteOnly && text.startsWith("trigger.new")) {
+        if (deleteOnly && text.startsWith("trigger.new") && !reportedLines.has(line)) {
+          reportedLines.add(line);
           ctx.report(
             node,
             "Trigger.new is null on DELETE events — this trigger is DELETE-only, so Trigger.new will always be null here.",
