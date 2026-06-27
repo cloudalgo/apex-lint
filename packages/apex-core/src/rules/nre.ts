@@ -313,11 +313,15 @@ export const soqlResultNotNullChecked: Rule = {
     // Map: variable name (lowercase) → 1-based line number of the assignment
     const soqlVars = new Map<string, number>();
     const sourceLines = ctx.source.split("\n");
+    // Tracks (varName:line) pairs already reported to avoid duplicate violations
+    // from nested DotExpressionContext nodes.
+    const reportedVarLines = new Set<string>();
 
     return {
       MethodDeclarationContext: (_node) => {
         // Clear per-method to avoid inter-method false positives.
         soqlVars.clear();
+        reportedVarLines.clear();
       },
 
       VariableDeclaratorContext: (node) => {
@@ -333,6 +337,12 @@ export const soqlResultNotNullChecked: Rule = {
           }
         });
         if (!hasLimitOneQuery) return;
+
+        // Skip if the variable is a List type — SOQL always returns a non-null list.
+        const localDecl = node.parentCtx?.parentCtx;
+        if (localDecl && nodeType(localDecl) === "LocalVariableDeclarationContext") {
+          if (textOf(localDecl).toLowerCase().startsWith("list<")) return;
+        }
 
         // Extract the declared variable name via node.id().
         const idNode = node.id ? node.id() : null;
@@ -364,6 +374,11 @@ export const soqlResultNotNullChecked: Rule = {
             `(?:${escaped}\\s*!=\\s*null|null\\s*!=\\s*${escaped}|${escaped}\\s*==\\s*null|null\\s*==\\s*${escaped})`,
           );
           if (guardPattern.test(between)) continue;
+
+          // Deduplicate: nested DotExpressionContext nodes can fire for the same variable+line.
+          const key = `${varName}:${accessLine}`;
+          if (reportedVarLines.has(key)) continue;
+          reportedVarLines.add(key);
 
           ctx.report(
             node,

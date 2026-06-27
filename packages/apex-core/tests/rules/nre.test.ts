@@ -348,3 +348,15 @@ public class FooTest {
   const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
   assert.equal(v.length, 0);
 });
+
+test('SoqlResultNotNullChecked: no flag for List<T> SOQL assignment', () => {
+  const src = `
+public class Foo {
+  public void run() {
+    List<Contact> contacts = [SELECT Id FROM Contact LIMIT 1];
+    Integer n = contacts.size();
+  }
+}`;
+  const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
