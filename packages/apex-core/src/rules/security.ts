@@ -372,7 +372,7 @@ export const apexOpenRedirect: Rule = {
       // Skip @IsTest contexts — test code constructs PageReferences for test harness setup
       if (isInsideTestContext(methodNode)) return;
 
-      const tainted = buildTaintedVars(methodNode, TAINT_SOURCES, REDIRECT_SANITIZERS);
+      const tainted = getTaint(methodNode, []).tainted;
 
       walk(methodNode, (n) => {
         if (nodeType(n) !== "NewExpressionContext") return;
@@ -410,7 +410,7 @@ export const apexSSRF: Rule = {
   description: "User-controlled URL flows into an HTTP callout endpoint — SSRF risk.",
   create(ctx) {
     function check(methodNode: any): void {
-      const tainted = buildTaintedVars(methodNode, TAINT_SOURCES, []);
+      const tainted = getTaint(methodNode, []).tainted;
       if (tainted.size === 0) return;
 
       walk(methodNode, (n) => {

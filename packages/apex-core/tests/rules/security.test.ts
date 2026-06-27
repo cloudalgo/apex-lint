@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Linter } from '../../src/engine/engine.js';
 import type { Violation } from '../../src/engine/types.js';
-import { apexSOQLInjection, databaseQueryWithVariable } from '../../src/rules/security.js';
+import { apexSOQLInjection, databaseQueryWithVariable, apexOpenRedirect, apexSSRF } from '../../src/rules/security.js';
 
 function violations(source: string): Violation[] {
   return new Linter([apexSOQLInjection]).lint(source).violations;
@@ -103,4 +103,16 @@ test('ApexSOQLInjection: flags a tainted @AuraEnabled controller param reaching 
   const v = violations(src);
   assert.equal(v.length, 1);
   assert.equal(v[0].severity, 'critical');
+});
+
+test('ApexOpenRedirect: flags public-param URL into PageReference', () => {
+  const src = `public class C { public PageReference go(String url){ return new PageReference(url); } }`;
+  const v = new Linter([apexOpenRedirect]).lint(src).violations;
+  assert.equal(v.length, 1);
+});
+
+test('ApexSSRF: flags public-param URL into setEndpoint', () => {
+  const src = `public class C { public void call(String url){ HttpRequest r = new HttpRequest(); r.setEndpoint(url); } }`;
+  const v = new Linter([apexSSRF]).lint(src).violations;
+  assert.equal(v.length, 1);
 });
