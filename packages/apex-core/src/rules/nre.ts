@@ -1,5 +1,5 @@
 import type { Rule } from "../engine/types.js";
-import { nodeType, textOf, walk } from "../ast/walk.js";
+import { nodeType, textOf } from "../ast/walk.js";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -40,8 +40,8 @@ function isInsideTestClass(node: any): boolean {
 export const mapGetWithoutNullCheck: Rule = {
   id: "MapGetWithoutNullCheck",
   category: "error-prone",
-  severity: "high",
-  description: "Map.get() returns null for missing keys — dereference the result only after a null check or use ?.`.",
+  severity: "moderate",
+  description: "Map.get() returns null for missing keys — null-check the result or use ?. before accessing the property.",
   create(ctx) {
     return {
       DotExpressionContext: (node) => {
