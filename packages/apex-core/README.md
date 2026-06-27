@@ -153,7 +153,7 @@ interface Violation {
 
 ### `allRules: Rule[]`
 
-All 41 built-in rules, ready to pass directly to `new Linter()`.
+All 47 built-in rules, ready to pass directly to `new Linter()`.
 
 ---
 
@@ -289,6 +289,12 @@ To discover which context name a given Apex construct produces, walk a sample fi
 | `EmptyCatchBlock` | error-prone | moderate |
 | `OverrideBothEqualsAndHashcode` | error-prone | moderate |
 | `AvoidHardcodedId` | error-prone | moderate |
+| `MapGetWithoutNullCheck` | error-prone | moderate |
+| `SoqlResultIndexWithoutCheck` | error-prone | moderate |
+| `TriggerContextNullAccess` | error-prone | moderate |
+| `ChainedRelationshipAccess` | error-prone | info |
+| `SoqlResultNotNullChecked` | error-prone | moderate |
+| `MapGetResultNotNullChecked` | error-prone | moderate |
 | `TriggerInlineLogic` | design | moderate |
 | `CyclomaticComplexity` | design | moderate |
 | `CognitiveComplexity` | design | moderate |

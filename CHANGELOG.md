@@ -4,6 +4,18 @@ All notable changes to apex-lint are documented here.
 
 ---
 
+## [0.1.18] — 2026-06-27
+
+### Added
+- `MapGetWithoutNullCheck` — flags inline `Map.get(key).field` dereferences where the result is not null-checked
+- `SoqlResultIndexWithoutCheck` — flags `[SELECT ...][0]` inline SOQL index access without an isEmpty() guard
+- `TriggerContextNullAccess` — flags `Trigger.old` in INSERT-only triggers and `Trigger.new` in DELETE-only triggers where the collection is always null
+- `ChainedRelationshipAccess` — flags 3+ level sObject relationship chains (e.g. `account.Owner.Email`) without null guards or safe navigation
+- `SoqlResultNotNullChecked` — flags variables assigned from `LIMIT 1` SOQL and subsequently accessed without a null check
+- `MapGetResultNotNullChecked` — flags variables assigned from `Map.get()` and subsequently accessed without a null check
+
+---
+
 ## [0.1.17] — 2026-06-27
 
 ### Fixed

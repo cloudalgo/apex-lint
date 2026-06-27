@@ -1,6 +1,6 @@
 # @cloudalgo/apex-lint
 
-Zero-JVM Salesforce Apex linter. No Java, no Code Analyzer plugin — runs 41 built-in static analysis rules against your Apex source using the same ANTLR grammar as PMD 7.
+Zero-JVM Salesforce Apex linter. No Java, no Code Analyzer plugin — runs 47 built-in static analysis rules against your Apex source using the same ANTLR grammar as PMD 7.
 
 ```bash
 npm install -g @cloudalgo/apex-lint
@@ -24,7 +24,7 @@ apex-lint force-app --fail-on high
 # SARIF output for GitHub code scanning
 apex-lint force-app --format sarif --output results.sarif
 
-# List all 41 rules grouped by category
+# List all 47 rules grouped by category
 apex-lint --list-rules
 ```
 
@@ -41,7 +41,7 @@ Options:
       --fail-on <sev>         fail at this severity+         (default: moderate)
                               critical | high | moderate | low | info
   -c, --config <file>         path to config json
-      --rules <ids>           comma-separated rule IDs to run (default: all 41)
+      --rules <ids>           comma-separated rule IDs to run (default: all 47)
       --exclude-rules <ids>   comma-separated rule IDs to skip
       --categories <cats>     comma-separated categories to run
                               security | performance | error-prone | design
@@ -108,7 +108,7 @@ public class LegacyHelper { ... }
 
 ---
 
-## Rules (41)
+## Rules (47)
 
 ### Security (10)
 | Rule | Severity |
@@ -134,7 +134,7 @@ public class LegacyHelper { ... }
 | `AvoidNonRestrictiveQueries` | low |
 | `SystemDebugInLoop` | low |
 
-### Error-Prone (6)
+### Error-Prone (12)
 | Rule | Severity |
 |------|----------|
 | `InaccessibleAuraEnabledGetter` | high |
@@ -143,6 +143,12 @@ public class LegacyHelper { ... }
 | `EmptyCatchBlock` | moderate |
 | `OverrideBothEqualsAndHashcode` | moderate |
 | `AvoidHardcodedId` | moderate |
+| `MapGetWithoutNullCheck` | moderate |
+| `SoqlResultIndexWithoutCheck` | moderate |
+| `TriggerContextNullAccess` | moderate |
+| `ChainedRelationshipAccess` | info |
+| `SoqlResultNotNullChecked` | moderate |
+| `MapGetResultNotNullChecked` | moderate |
 
 ### Design (8)
 | Rule | Severity |

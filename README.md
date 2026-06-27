@@ -1,6 +1,6 @@
 # apex-lint
 
-Zero-JVM static analysis for Salesforce Apex. No Java, no apex-jorje, no Code Analyzer plugin — parses Apex with the same ANTLR grammar PMD 7 uses (`@apexdevtools/apex-parser`), runs 41 built-in rules against the parse tree, and emits findings as pretty text, JSON, or SARIF.
+Zero-JVM static analysis for Salesforce Apex. No Java, no apex-jorje, no Code Analyzer plugin — parses Apex with the same ANTLR grammar PMD 7 uses (`@apexdevtools/apex-parser`), runs 47 built-in rules against the parse tree, and emits findings as pretty text, JSON, or SARIF.
 
 ---
 
@@ -40,7 +40,7 @@ const result = new Linter(allRules).lint({ filePath: "MyClass.cls", source });
 
 [![npm](https://img.shields.io/npm/v/@cloudalgo/eslint-plugin-apex)](https://www.npmjs.com/package/@cloudalgo/eslint-plugin-apex)
 
-ESLint plugin that brings all 41 Apex rules into standard ESLint tooling. Works with ESLint v8 (legacy `.eslintrc`) and v9 (flat config). Enables inline `// eslint-disable` suppression and VS Code integration via the ESLint extension.
+ESLint plugin that brings all 47 Apex rules into standard ESLint tooling. Works with ESLint v8 (legacy `.eslintrc`) and v9 (flat config). Enables inline `// eslint-disable` suppression and VS Code integration via the ESLint extension.
 
 ```js
 // eslint.config.js (ESLint v9)
@@ -124,7 +124,7 @@ apex-lint force-app --format json --output results.json
 # Only fail CI on high+
 apex-lint force-app --fail-on high
 
-# List all 41 rules grouped by category
+# List all 47 rules grouped by category
 apex-lint --list-rules
 ```
 
@@ -197,7 +197,7 @@ Suppressed violations are counted separately and shown in the summary line (`N s
 
 ## Rules
 
-41 built-in rules across 6 categories. See [docs/rules.md](docs/rules.md) for the full reference with examples and fixes.
+47 built-in rules across 6 categories. See [docs/rules.md](docs/rules.md) for the full reference with examples and fixes.
 
 ### Security (10)
 
@@ -227,7 +227,7 @@ Suppressed violations are counted separately and shown in the summary line (`N s
 | `AvoidNonRestrictiveQueries` | low | SOQL without a WHERE clause |
 | `SystemDebugInLoop` | low | `System.debug()` inside a loop |
 
-### Error-Prone (6)
+### Error-Prone (12)
 
 | Rule | Severity | Description |
 |------|----------|-------------|
@@ -237,6 +237,12 @@ Suppressed violations are counted separately and shown in the summary line (`N s
 | `EmptyCatchBlock` | moderate | Empty catch block silently swallows exceptions |
 | `OverrideBothEqualsAndHashcode` | moderate | `equals()` without `hashCode()` breaks Map/Set |
 | `AvoidHardcodedId` | moderate | Hardcoded 15/18-char Salesforce record ID |
+| `MapGetWithoutNullCheck` | moderate | Map.get() result used without null check — dereference is unsafe if key is missing |
+| `SoqlResultIndexWithoutCheck` | moderate | Inline SOQL result accessed by index without empty check |
+| `TriggerContextNullAccess` | moderate | Trigger.old on INSERT triggers or Trigger.new on DELETE triggers is always null |
+| `ChainedRelationshipAccess` | info | 3+ level sObject relationship chain without null guards |
+| `SoqlResultNotNullChecked` | moderate | LIMIT 1 SOQL result variable accessed without null check |
+| `MapGetResultNotNullChecked` | moderate | Map.get() result variable accessed without null check |
 
 ### Design (8)
 

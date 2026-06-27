@@ -13,6 +13,10 @@ import { soqlInBatchExecute, httpCalloutInLoop, systemDebugInLoop, avoidNonRestr
 import { avoidFutureAnnotation, futureMethodChaining, triggerInlineLogic } from "./async.js";
 import { apexBadCrypto, apexSOQLInjection, apexOpenRedirect, databaseQueryWithVariable, apexSharingViolations, apexCsrf, apexSSRF, apexXSSFromURLParam } from "./security.js";
 import { cyclomaticComplexity, cognitiveComplexity, avoidDeeplyNestedIfStmts, excessiveParameterList, tooManyFields, excessivePublicCount, unusedPrivateMethod } from "./design.js";
+import {
+  mapGetWithoutNullCheck, soqlResultIndexWithoutCheck, triggerContextNullAccess,
+  chainedRelationshipAccess, soqlResultNotNullChecked, mapGetResultNotNullChecked,
+} from "./nre.js";
 
 /** All built-in rules. The CLI selects/filters from this set via config. */
 export const allRules: Rule[] = [
@@ -41,6 +45,13 @@ export const allRules: Rule[] = [
   avoidHardcodedId,
   unguardedCrudOperation,
   futureMethodChaining,
+  // NRE (Null Reference Exception)
+  mapGetWithoutNullCheck,
+  soqlResultIndexWithoutCheck,
+  triggerContextNullAccess,
+  chainedRelationshipAccess,
+  soqlResultNotNullChecked,
+  mapGetResultNotNullChecked,
   // Design
   triggerInlineLogic,
   cyclomaticComplexity,
@@ -77,4 +88,6 @@ export {
   hardcodedUrl, avoidGlobalModifier, debugsShouldUseLoggingLevel, apexAssertionsShouldIncludeMessage,
   apexUnitTestMethodShouldHaveIsTestAnnotation, apexUnitTestClassShouldHaveRunAs,
   queueableWithoutFinalizer,
+  mapGetWithoutNullCheck, soqlResultIndexWithoutCheck, triggerContextNullAccess,
+  chainedRelationshipAccess, soqlResultNotNullChecked, mapGetResultNotNullChecked,
 };
