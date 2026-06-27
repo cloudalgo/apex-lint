@@ -234,18 +234,17 @@ export const unusedPrivateMethod: Rule = {
 
         if (privateMethods.size === 0) return;
 
-        // Step 2: collect all method call references within the entire class (including inner classes)
+        // Step 2: collect all method call references within the entire class
+        // (including inner classes). Extract EVERY `name(` in a call expression so
+        // chained calls like `this.helper().process()` register both helper AND
+        // process — taking only the segment before the first `(` missed the tail
+        // call and falsely flagged it as unused.
         const calledNames = new Set<string>();
         walk(node, (n) => {
           const t = nodeType(n);
-          if (t === "MethodCallExpressionContext") {
-            const name = textOf(n).toLowerCase().split("(")[0];
-            if (name) calledNames.add(name);
-          } else if (t === "DotExpressionContext") {
-            const text = textOf(n).toLowerCase();
-            if (!text.includes("(")) return; // field access, not a method call
-            const name = text.split("(")[0].split(".").pop() ?? "";
-            if (name) calledNames.add(name);
+          if (t !== "MethodCallExpressionContext" && t !== "DotExpressionContext") return;
+          for (const m of textOf(n).toLowerCase().matchAll(/([a-z_][a-z0-9_]*)\(/g)) {
+            calledNames.add(m[1]);
           }
         });
 

@@ -58,6 +58,7 @@ export const futureMethodChaining: Rule = {
   create(ctx) {
     let futureMethods = new Set<string>();
     let currentIsFuture = false;
+    let currentClassName = "";
 
     return {
       ClassDeclarationContext: (node) => {
@@ -65,6 +66,7 @@ export const futureMethodChaining: Rule = {
         // methods in Apex, and overwriting futureMethods would lose the outer set.
         if (nodeType(node.parentCtx) === "TypeDeclarationContext") {
           futureMethods = collectFutureMethods(node);
+          currentClassName = node.id ? textOf(node.id()) : "";
         }
         currentIsFuture = false;
       },
@@ -86,6 +88,26 @@ export const futureMethodChaining: Rule = {
           ctx.report(
             node,
             `Calling @future method "${calleeName}" from another @future method — Apex throws a runtime exception for chained @future calls.`,
+          );
+        }
+      },
+      // Same-class qualified static calls: `this.futureB()` or `ThisClass.futureB()`.
+      // Restricted to `this`/the enclosing class name so an unrelated
+      // `OtherClass.foo()` with a coincidentally-matching name is not flagged.
+      DotExpressionContext: (node) => {
+        if (!currentIsFuture) return;
+        const text = textOf(node);
+        const dot = text.indexOf(".");
+        const paren = text.indexOf("(");
+        if (dot < 1 || paren < dot) return;
+        const qualifier = text.slice(0, dot);
+        if (qualifier !== "this" && qualifier !== currentClassName) return;
+        const method = text.slice(dot + 1, paren);
+        if (!/^[A-Za-z_]\w*$/.test(method)) return; // bare method name only
+        if (futureMethods.has(method)) {
+          ctx.report(
+            node,
+            `Calling @future method "${method}" from another @future method — Apex throws a runtime exception for chained @future calls.`,
           );
         }
       },
