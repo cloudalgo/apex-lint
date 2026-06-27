@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Linter } from '../../src/engine/engine.js';
 import type { Violation } from '../../src/engine/types.js';
-import { mapGetWithoutNullCheck, soqlResultIndexWithoutCheck, triggerContextNullAccess, chainedRelationshipAccess, soqlResultNotNullChecked } from '../../src/rules/nre.js';
+import { mapGetWithoutNullCheck, soqlResultIndexWithoutCheck, triggerContextNullAccess, chainedRelationshipAccess, soqlResultNotNullChecked, mapGetResultNotNullChecked } from '../../src/rules/nre.js';
 
 function violations(source: string): Violation[] {
   return new Linter([mapGetWithoutNullCheck]).lint(source).violations;
@@ -358,5 +358,86 @@ public class Foo {
   }
 }`;
   const v = new Linter([soqlResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+// ─── MapGetResultNotNullChecked ───────────────────────────────────────────────
+
+test('MapGetResultNotNullChecked: flags variable access after Map.get() assignment', () => {
+  const src = `
+public class Foo {
+  public void run(Map<Id, Account> m, Id i) {
+    Account a = m.get(i);
+    String name = a.Name;
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 1);
+  assert.equal(v[0].ruleId, 'MapGetResultNotNullChecked');
+});
+
+test('MapGetResultNotNullChecked: no flag when null check precedes access', () => {
+  const src = `
+public class Foo {
+  public void run(Map<Id, Account> m, Id i) {
+    Account a = m.get(i);
+    if (a != null) {
+      System.debug(a.Name);
+    }
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('MapGetResultNotNullChecked: no flag when safe nav used', () => {
+  const src = `
+public class Foo {
+  public void run(Map<Id, Account> m, Id i) {
+    Account a = m.get(i);
+    String name = a?.Name;
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('MapGetResultNotNullChecked: no flag for non-get method assignments', () => {
+  const src = `
+public class Foo {
+  public void run() {
+    Account a = SomeService.fetchAccount();
+    String name = a.Name;
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('MapGetResultNotNullChecked: no flag when containsKey guard precedes access', () => {
+  const src = `
+public class Foo {
+  public void run(Map<Id, Account> m, Id i) {
+    Account a = m.get(i);
+    if (m.containsKey(i)) {
+      System.debug(a.Name);
+    }
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('MapGetResultNotNullChecked: skips @IsTest classes', () => {
+  const src = `
+@IsTest
+public class FooTest {
+  static testMethod void run() {
+    Map<Id, Account> m = new Map<Id, Account>();
+    Account a = m.get(null);
+    System.debug(a.Name);
+  }
+}`;
+  const v = new Linter([mapGetResultNotNullChecked]).lint(src).violations;
   assert.equal(v.length, 0);
 });

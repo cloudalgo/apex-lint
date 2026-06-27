@@ -392,6 +392,102 @@ export const soqlResultNotNullChecked: Rule = {
   },
 };
 
+// ─── MapGetResultNotNullChecked ───────────────────────────────────────────────
+
+/**
+ * Detects sObject variable assigned from Map.get() and subsequently accessed
+ * without a null check. Map.get() returns null for missing keys, making any
+ * field access on the result an NRE risk.
+ *
+ * Identifies the pattern by checking if the variable initializer text contains
+ * `.get(` (after whitespace stripping). Suppressed when: safe navigation used,
+ * null check or containsKey guard precedes the access.
+ */
+export const mapGetResultNotNullChecked: Rule = {
+  id: "MapGetResultNotNullChecked",
+  category: "error-prone",
+  severity: "moderate",
+  description: "Variable assigned from Map.get() may be null — access without null check is an NRE risk.",
+  create(ctx) {
+    // Map: variable name (lowercase) → 1-based line number of the assignment
+    const mapGetVars = new Map<string, number>();
+    const sourceLines = ctx.source.split("\n");
+    // Tracks (varName:line) pairs already reported to avoid duplicate violations.
+    const reportedVarLines = new Set<string>();
+
+    return {
+      MethodDeclarationContext: (_node) => {
+        // Clear per-method to avoid inter-method false positives.
+        mapGetVars.clear();
+        reportedVarLines.clear();
+      },
+
+      VariableDeclaratorContext: (node) => {
+        if (isInsideTestClass(node)) return;
+        const expr = node.expression ? node.expression() : null;
+        if (!expr) return;
+
+        const exprText = textOf(expr).toLowerCase();
+        // Must contain .get( to be a candidate
+        if (!exprText.includes(".get(")) return;
+        // Exclude common non-Map .get() patterns (Schema describe methods, etc.)
+        // These all lack a meaningful key argument or use a different signature.
+        if (
+          exprText.includes(".getdescribe(") ||
+          exprText.includes(".getsobjecttype(") ||
+          exprText.includes(".getglobaldescribe(") ||
+          exprText.includes(".getchildrelationships(") ||
+          exprText.includes(".getpicklistvalues(") ||
+          exprText.includes(".getmap(")
+        ) return;
+
+        const idNode = node.id ? node.id() : null;
+        const varName = idNode ? textOf(idNode) : "";
+        if (!varName) return;
+
+        const line = node.start?.line ?? 0;
+        mapGetVars.set(varName.toLowerCase(), line);
+      },
+
+      DotExpressionContext: (node) => {
+        if (isInsideTestClass(node)) return;
+        if (mapGetVars.size === 0) return;
+        const text = textOf(node);
+        const textLower = text.toLowerCase();
+
+        for (const [varName, assignLine] of mapGetVars) {
+          // Must start with varName. (field access or method call)
+          if (!textLower.startsWith(varName + ".")) continue;
+          // Safe navigation (?.) means developer already guards — no flag.
+          if (text.includes("?.")) continue;
+
+          const accessLine = node.start?.line ?? 0;
+          // Look for a null check or containsKey guard between assignment and access.
+          const between = sourceLines.slice(assignLine, accessLine - 1).join("\n").toLowerCase();
+          const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const guardPattern = new RegExp(
+            `(?:${escaped}\\s*!=\\s*null|null\\s*!=\\s*${escaped}|${escaped}\\s*==\\s*null|null\\s*==\\s*${escaped})`,
+          );
+          if (guardPattern.test(between)) continue;
+          // containsKey() guard means the developer verified the key exists.
+          if (between.includes(".containskey(")) continue;
+
+          // Deduplicate: nested DotExpressionContext nodes can fire for the same variable+line.
+          const key = `${varName}:${accessLine}`;
+          if (reportedVarLines.has(key)) continue;
+          reportedVarLines.add(key);
+
+          ctx.report(
+            node,
+            `'${varName}' was assigned from Map.get() and may be null — add a null check or use ?.`,
+          );
+          break;
+        }
+      },
+    };
+  },
+};
+
 // ─── TriggerContextNullAccess ─────────────────────────────────────────────────
 
 /**
