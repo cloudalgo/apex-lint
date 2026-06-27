@@ -4,6 +4,33 @@ All notable changes to apex-lint are documented here.
 
 ---
 
+## [0.1.17] — 2026-06-27
+
+### Fixed
+
+- **`MethodNamingConventions` no longer flags helper methods inside `@IsTest` classes.**
+  Our rule skipped `@isTest`-annotated methods but not plain helpers in test classes
+  (e.g. `createTestUser_noAccess`, `assertCompareBoolean`). These legitimately use
+  underscores. PMD provides this via `testPattern` config; we skip the whole class.
+  Eliminated 34 false positives across fflib, NPSP, and EDA.
+
+- **`DebugsShouldUseLoggingLevel` no longer fires when a `LoggingLevel` variable is
+  passed as an argument.**
+  `system.debug(level, message)` — where `level` is a variable, not the literal
+  `LoggingLevel.WARN` enum — was incorrectly flagged because the check was
+  `!text.includes("logginglevel.")`. Fixed to use argument-count logic (PMD uses
+  `count(*)=2`): fires only when exactly 1 argument is present (no logging level
+  parameter at all). Eliminated 7 false positives in `UTIL_Debug.cls`-style wrappers.
+
+- **`ApexAssertionsShouldIncludeMessage` now restricted to `@IsTest` classes.**
+  PMD extends `AbstractApexUnitTestRule` which only visits `@IsTest` classes.
+  Production classes may use `System.assert()` for defensive assertions (e.g.
+  fflib's `TestSObjectDomain` stub that must live in a production file so
+  `Type.newInstance()` can resolve it). Added `isInsideTestClass()` guard.
+  Eliminated 5 false positives in `fflib_SObjectDomain.cls` and similar.
+
+---
+
 ## [0.1.16] — 2026-06-26
 
 ### Added
