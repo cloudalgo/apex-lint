@@ -439,6 +439,9 @@ export const apexAssertionsShouldIncludeMessage: Rule = {
   create(ctx) {
     return {
       DotExpressionContext: (node) => {
+        // PMD: AbstractApexUnitTestRule — only fires inside @IsTest classes.
+        // Production classes may contain System.assert() for defensive checks; those are out of scope.
+        if (!isInsideTestClass(node)) return;
         const t = textOf(node).toLowerCase();
         // assertEquals(a, b, msg) and assertNotEquals(a, b, msg) need 3 args
         // assert(cond, msg) needs 2 args
