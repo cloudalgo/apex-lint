@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Linter } from '../../src/engine/engine.js';
 import type { Violation } from '../../src/engine/types.js';
-import { apexSOQLInjection, databaseQueryWithVariable } from '../../src/rules/security.js';
+import { apexSOQLInjection, databaseQueryWithVariable, apexOpenRedirect, apexSSRF, apexXSSFromURLParam } from '../../src/rules/security.js';
 
 function violations(source: string): Violation[] {
   return new Linter([apexSOQLInjection]).lint(source).violations;
@@ -91,4 +91,46 @@ test('DatabaseQueryWithVariable: flags inline concatenation starting with a lite
 test('DatabaseQueryWithVariable: no flag for a fully static query', () => {
   const src = `public class Foo { List<Account> run() { return Database.query('SELECT Id FROM Account'); } }`;
   assert.equal(dqvViolations(src).length, 0);
+});
+
+test('ApexSOQLInjection: flags a tainted @AuraEnabled controller param reaching query', () => {
+  const src = `public class Ctrl {
+    @AuraEnabled
+    public static List<Account> search(String term) {
+      return Database.query('SELECT Id FROM Account WHERE Name = ' + term);
+    }
+  }`;
+  const v = violations(src);
+  assert.equal(v.length, 1);
+  assert.equal(v[0].severity, 'critical');
+});
+
+test('ApexOpenRedirect: flags public-param URL into PageReference', () => {
+  const src = `public class C { public PageReference go(String url){ return new PageReference(url); } }`;
+  const v = new Linter([apexOpenRedirect]).lint(src).violations;
+  assert.equal(v.length, 1);
+});
+
+test('ApexSSRF: flags public-param URL into setEndpoint', () => {
+  const src = `public class C { public void call(String url){ HttpRequest r = new HttpRequest(); r.setEndpoint(url); } }`;
+  const v = new Linter([apexSSRF]).lint(src).violations;
+  assert.equal(v.length, 1);
+});
+
+test('ApexXSSFromURLParam: flags public-param into ApexPages.Message', () => {
+  const src = `public class C { public void warn(String msg){ ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, msg)); } }`;
+  const v = new Linter([apexXSSFromURLParam]).lint(src).violations;
+  assert.equal(v.length, 1);
+});
+
+test('ApexXSSFromURLParam: no flag when escapeHtml4 sanitizes', () => {
+  const src = `public class C { public void warn(String msg){ String safe = String.escapeHtml4(msg); ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, safe)); } }`;
+  const v = new Linter([apexXSSFromURLParam]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('ApexXSSFromURLParam: no flag when a literal arg merely contains the param name', () => {
+  const src = `public class C { public void f(String contactId) { ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.FATAL, 'Please pass in a valid contactId and Email.')); } }`;
+  const v = new Linter([apexXSSFromURLParam]).lint(src).violations;
+  assert.equal(v.length, 0);
 });

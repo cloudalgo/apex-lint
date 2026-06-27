@@ -1,7 +1,7 @@
 # Taint Engine — Design Spec
 
 **Date:** 2026-06-27
-**Status:** Approved for planning
+**Status:** Implemented
 **Scope:** `packages/apex-core` — taint analysis used by the 4 security sink rules.
 
 ## 1. Goal & non-goals
