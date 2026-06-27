@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Linter } from '../../src/engine/engine.js';
 import type { Violation } from '../../src/engine/types.js';
-import { mapGetWithoutNullCheck, soqlResultIndexWithoutCheck } from '../../src/rules/nre.js';
+import { mapGetWithoutNullCheck, soqlResultIndexWithoutCheck, triggerContextNullAccess } from '../../src/rules/nre.js';
 
 function violations(source: string): Violation[] {
   return new Linter([mapGetWithoutNullCheck]).lint(source).violations;
@@ -132,5 +132,59 @@ public class FooTest {
   }
 }`;
   const v = new Linter([soqlResultIndexWithoutCheck]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+// ─── TriggerContextNullAccess ─────────────────────────────────────────────────
+
+test('TriggerContextNullAccess: flags Trigger.old in insert-only trigger', () => {
+  const src = `trigger AccTrigger on Account (before insert) {
+  for (Account old : Trigger.old) { }
+}`;
+  const v = new Linter([triggerContextNullAccess]).lint({ source: src, filePath: 'AccTrigger.trigger' }).violations;
+  assert.equal(v.length, 1);
+  assert.equal(v[0].ruleId, 'TriggerContextNullAccess');
+});
+
+test('TriggerContextNullAccess: flags Trigger.old in after-insert-only trigger', () => {
+  const src = `trigger AccTrigger on Account (after insert) {
+  List<Account> olds = Trigger.old;
+}`;
+  const v = new Linter([triggerContextNullAccess]).lint({ source: src, filePath: 'AccTrigger.trigger' }).violations;
+  assert.equal(v.length, 1);
+});
+
+test('TriggerContextNullAccess: no flag when trigger handles insert AND update', () => {
+  const src = `trigger AccTrigger on Account (before insert, before update) {
+  for (Account old : Trigger.old) { }
+}`;
+  const v = new Linter([triggerContextNullAccess]).lint({ source: src, filePath: 'AccTrigger.trigger' }).violations;
+  assert.equal(v.length, 0);
+});
+
+test('TriggerContextNullAccess: flags Trigger.new in delete-only trigger', () => {
+  const src = `trigger AccTrigger on Account (before delete) {
+  for (Account n : Trigger.new) { }
+}`;
+  const v = new Linter([triggerContextNullAccess]).lint({ source: src, filePath: 'AccTrigger.trigger' }).violations;
+  assert.equal(v.length, 1);
+});
+
+test('TriggerContextNullAccess: no flag when trigger handles delete AND undelete', () => {
+  const src = `trigger AccTrigger on Account (after delete, after undelete) {
+  for (Account n : Trigger.new) { }
+}`;
+  const v = new Linter([triggerContextNullAccess]).lint({ source: src, filePath: 'AccTrigger.trigger' }).violations;
+  assert.equal(v.length, 0);
+});
+
+test('TriggerContextNullAccess: no flag for class files', () => {
+  const src = `
+public class Foo {
+  public void run() {
+    for (Account a : Trigger.old) { }
+  }
+}`;
+  const v = new Linter([triggerContextNullAccess]).lint({ source: src, filePath: 'Foo.cls' }).violations;
   assert.equal(v.length, 0);
 });

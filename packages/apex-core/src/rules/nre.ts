@@ -218,3 +218,58 @@ export const soqlResultIndexWithoutCheck: Rule = {
     };
   },
 };
+
+// ─── TriggerContextNullAccess ─────────────────────────────────────────────────
+
+/**
+ * Detects Trigger.old/Trigger.new access when guaranteed to be null.
+ * Trigger.old is null on INSERT events. Trigger.new is null on DELETE events.
+ * Only flags when the trigger header declares exclusively insert or exclusively
+ * delete events — zero false positives.
+ */
+export const triggerContextNullAccess: Rule = {
+  id: "TriggerContextNullAccess",
+  category: "error-prone",
+  severity: "moderate",
+  description: "Trigger.old is null on INSERT triggers; Trigger.new is null on DELETE triggers.",
+  create(ctx) {
+    if (!ctx.filePath.endsWith(".trigger")) return {};
+
+    // Parse event list from trigger header: "trigger X on Y (before insert, after update)"
+    const headerMatch = ctx.source.toLowerCase().match(
+      /trigger\s+\w+\s+on\s+\w+\s*\(([^)]+)\)/,
+    );
+    if (!headerMatch) return {};
+    const events = headerMatch[1];
+
+    const hasInsert = /\binsert\b/.test(events);
+    const hasUpdate = /\bupdate\b/.test(events);
+    const hasDelete = /\bdelete\b/.test(events);
+    const hasUndelete = /\bundelete\b/.test(events);
+
+    // Insert-only: Trigger.old is ALWAYS null
+    const insertOnly = hasInsert && !hasUpdate && !hasDelete && !hasUndelete;
+    // Delete-only: Trigger.new is ALWAYS null (undelete restores records → Trigger.new has values)
+    const deleteOnly = hasDelete && !hasInsert && !hasUpdate && !hasUndelete;
+
+    if (!insertOnly && !deleteOnly) return {};
+
+    return {
+      DotExpressionContext: (node) => {
+        const text = textOf(node).toLowerCase();
+        if (insertOnly && text.startsWith("trigger.old")) {
+          ctx.report(
+            node,
+            "Trigger.old is null on INSERT events — this trigger is INSERT-only, so Trigger.old will always be null here.",
+          );
+        }
+        if (deleteOnly && text.startsWith("trigger.new")) {
+          ctx.report(
+            node,
+            "Trigger.new is null on DELETE events — this trigger is DELETE-only, so Trigger.new will always be null here.",
+          );
+        }
+      },
+    };
+  },
+};
