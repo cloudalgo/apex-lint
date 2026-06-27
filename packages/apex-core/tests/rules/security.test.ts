@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Linter } from '../../src/engine/engine.js';
 import type { Violation } from '../../src/engine/types.js';
-import { apexSOQLInjection, databaseQueryWithVariable, apexOpenRedirect, apexSSRF } from '../../src/rules/security.js';
+import { apexSOQLInjection, databaseQueryWithVariable, apexOpenRedirect, apexSSRF, apexXSSFromURLParam } from '../../src/rules/security.js';
 
 function violations(source: string): Violation[] {
   return new Linter([apexSOQLInjection]).lint(source).violations;
@@ -115,4 +115,16 @@ test('ApexSSRF: flags public-param URL into setEndpoint', () => {
   const src = `public class C { public void call(String url){ HttpRequest r = new HttpRequest(); r.setEndpoint(url); } }`;
   const v = new Linter([apexSSRF]).lint(src).violations;
   assert.equal(v.length, 1);
+});
+
+test('ApexXSSFromURLParam: flags public-param into ApexPages.Message', () => {
+  const src = `public class C { public void warn(String msg){ ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, msg)); } }`;
+  const v = new Linter([apexXSSFromURLParam]).lint(src).violations;
+  assert.equal(v.length, 1);
+});
+
+test('ApexXSSFromURLParam: no flag when escapeHtml4 sanitizes', () => {
+  const src = `public class C { public void warn(String msg){ String safe = String.escapeHtml4(msg); ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, safe)); } }`;
+  const v = new Linter([apexXSSFromURLParam]).lint(src).violations;
+  assert.equal(v.length, 0);
 });

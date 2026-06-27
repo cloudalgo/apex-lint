@@ -1,6 +1,6 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, walk } from "../ast/walk.js";
-import { getTaint, SOQL_SANITIZERS as ENGINE_SOQL_SANITIZERS } from "../engine/taint.js";
+import { getTaint, SOQL_SANITIZERS as ENGINE_SOQL_SANITIZERS, XSS_SANITIZERS as ENGINE_XSS_SANITIZERS } from "../engine/taint.js";
 
 // ─── Intra-method taint analysis (PMD approach) ──────────────────────────────
 
@@ -455,7 +455,7 @@ export const apexXSSFromURLParam: Rule = {
   description: "User-controlled data flows into a page message or unescaped error — XSS risk.",
   create(ctx) {
     function check(methodNode: any): void {
-      const tainted = buildTaintedVars(methodNode, TAINT_SOURCES, XSS_SANITIZERS);
+      const tainted = getTaint(methodNode, ENGINE_XSS_SANITIZERS).tainted;
       if (tainted.size === 0) return;
 
       walk(methodNode, (n) => {
