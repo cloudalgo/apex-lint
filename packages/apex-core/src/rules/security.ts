@@ -1,6 +1,7 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, walk } from "../ast/walk.js";
 import { getTaint, stripStringLiterals, hasWordRef, SOQL_SANITIZERS as ENGINE_SOQL_SANITIZERS, XSS_SANITIZERS as ENGINE_XSS_SANITIZERS } from "../engine/taint.js";
+import { isInsideTestClass } from "../ast/apex-helpers.js";
 
 // `hasWordRef` and `stripStringLiterals` are shared with the taint engine —
 // imported from engine/taint.ts so the two never drift.
@@ -229,28 +230,6 @@ export const apexSOQLInjection: Rule = {
   },
 };
 
-/** Walk parent chain to check if any enclosing class has @IsTest. */
-function isInsideTestContext(node: any): boolean {
-  let p = node?.parentCtx;
-  while (p) {
-    if (nodeType(p) === "ClassDeclarationContext") {
-      const typeDecl = p.parentCtx;
-      if (typeDecl) {
-        for (let i = 0; i < (typeDecl.getChildCount?.() ?? 0); i++) {
-          const mod = typeDecl.getChild(i);
-          if (nodeType(mod) !== "ModifierContext") continue;
-          for (let j = 0; j < (mod.getChildCount?.() ?? 0); j++) {
-            const ann = mod.getChild(j);
-            if (nodeType(ann) === "AnnotationContext" &&
-                textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase() === "istest") return true;
-          }
-        }
-      }
-    }
-    p = p.parentCtx;
-  }
-  return false;
-}
 
 /**
  * Tainted URL value flows into new PageReference() — open redirect.
@@ -268,7 +247,7 @@ export const apexOpenRedirect: Rule = {
   create(ctx) {
     function check(methodNode: any): void {
       // Skip @IsTest contexts — test code constructs PageReferences for test harness setup
-      if (isInsideTestContext(methodNode)) return;
+      if (isInsideTestClass(methodNode)) return;
 
       const tainted = getTaint(methodNode, []).tainted;
 

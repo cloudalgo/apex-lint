@@ -1,34 +1,6 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, lineOf, walk } from "../ast/walk.js";
-
-// ─── Shared helpers ───────────────────────────────────────────────────────────
-
-function classHasIsTest(classNode: any): boolean {
-  const typeDecl = classNode.parentCtx;
-  if (!typeDecl) return false;
-  for (let i = 0; i < (typeDecl.getChildCount?.() ?? 0); i++) {
-    const child = typeDecl.getChild(i);
-    if (nodeType(child) !== "ModifierContext") continue;
-    for (let j = 0; j < (child.getChildCount?.() ?? 0); j++) {
-      const ann = child.getChild(j);
-      if (
-        nodeType(ann) === "AnnotationContext" &&
-        textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase() === "istest"
-      )
-        return true;
-    }
-  }
-  return false;
-}
-
-function isInsideTestClass(node: any): boolean {
-  let p = node?.parentCtx;
-  while (p) {
-    if (nodeType(p) === "ClassDeclarationContext" && classHasIsTest(p)) return true;
-    p = p.parentCtx;
-  }
-  return false;
-}
+import { isInsideTestClass } from "../ast/apex-helpers.js";
 
 // ─── MapGetWithoutNullCheck helpers ──────────────────────────────────────────
 

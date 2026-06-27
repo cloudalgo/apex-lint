@@ -1,21 +1,6 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, walk } from "../ast/walk.js";
-
-/** Check if a ClassBodyDeclarationContext has an annotation with the given name. */
-function hasAnnotationOn(node: any, annotName: string): boolean {
-  const lower = annotName.toLowerCase();
-  for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-    const modifier = node.getChild(i);
-    if (nodeType(modifier) !== "ModifierContext") continue;
-    for (let j = 0; j < (modifier.getChildCount?.() ?? 0); j++) {
-      const ann = modifier.getChild(j);
-      if (nodeType(ann) !== "AnnotationContext") continue;
-      const name = textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase();
-      if (name === lower) return true;
-    }
-  }
-  return false;
-}
+import { hasAnnotation } from "../ast/apex-helpers.js";
 
 /** Collect names of all @future methods in a class body. */
 function collectFutureMethods(classNode: any): Set<string> {
@@ -26,7 +11,7 @@ function collectFutureMethods(classNode: any): Set<string> {
     for (let j = 0; j < (classBody.getChildCount?.() ?? 0); j++) {
       const decl = classBody.getChild(j);
       if (nodeType(decl) !== "ClassBodyDeclarationContext") continue;
-      if (!hasAnnotationOn(decl, "future")) continue;
+      if (!hasAnnotation(decl, "future")) continue;
       walk(decl, (n) => {
         if (nodeType(n) === "MethodDeclarationContext" && n.id) {
           const name = textOf(n.id());
@@ -87,7 +72,7 @@ export const futureMethodChaining: Rule = {
         currentIsFuture = false;
         const cbDecl = node.parentCtx?.parentCtx; // MemberDeclaration → ClassBodyDeclaration
         if (cbDecl && nodeType(cbDecl) === "ClassBodyDeclarationContext") {
-          currentIsFuture = hasAnnotationOn(cbDecl, "future");
+          currentIsFuture = hasAnnotation(cbDecl, "future");
         }
       },
       // Bare method calls like futureB() parse as MethodCallExpressionContext

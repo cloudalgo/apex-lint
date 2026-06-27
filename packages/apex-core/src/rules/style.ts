@@ -1,5 +1,6 @@
 import type { Rule } from "../engine/types.js";
-import { nodeType, textOf, walk, ancestorOfType } from "../ast/walk.js";
+import { nodeType, textOf, walk } from "../ast/walk.js";
+import { hasAnnotation, isTestMethod, isTestClass, isInsideTestClass } from "../ast/apex-helpers.js";
 
 /** Catch block with no statements — swallows exceptions silently. */
 export const emptyCatchBlock: Rule = {
@@ -35,7 +36,7 @@ export const methodNamingConventions: Rule = {
     return {
       MethodDeclarationContext: (node) => {
         // Test methods and helpers in test classes commonly use underscores
-        if (methodIsTest(node) || isInsideTestClass(node)) return;
+        if (isTestMethod(node) || isInsideTestClass(node)) return;
         const idNode = node.id ? node.id() : null;
         const name = idNode ? textOf(idNode) : "";
         if (name && !CAMEL_CASE.test(name)) {
@@ -46,52 +47,6 @@ export const methodNamingConventions: Rule = {
   },
 };
 
-function hasAnnotationOn(node: any, annotName: string): boolean {
-  const lower = annotName.toLowerCase();
-  for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-    const modifier = node.getChild(i);
-    if (nodeType(modifier) !== "ModifierContext") continue;
-    for (let j = 0; j < (modifier.getChildCount?.() ?? 0); j++) {
-      const ann = modifier.getChild(j);
-      if (nodeType(ann) !== "AnnotationContext") continue;
-      const name = textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase();
-      if (name === lower) return true;
-    }
-  }
-  return false;
-}
-
-function methodIsTest(methodNode: any): boolean {
-  // @IsTest on the ClassBodyDeclarationContext (method level)
-  const cbDecl = methodNode.parentCtx?.parentCtx;
-  if (cbDecl && nodeType(cbDecl) === "ClassBodyDeclarationContext" && hasAnnotationOn(cbDecl, "istest")) return true;
-  // testMethod modifier keyword (legacy) — appears in textOf of a ModifierContext as 'testMethod'
-  if (cbDecl) {
-    for (let i = 0; i < (cbDecl.getChildCount?.() ?? 0); i++) {
-      const c = cbDecl.getChild(i);
-      if (nodeType(c) === "ModifierContext" && textOf(c).toLowerCase() === "testmethod") return true;
-    }
-  }
-  return false;
-}
-
-function classIsTest(classNode: any): boolean {
-  // For outer classes: ClassDeclarationContext.parentCtx = TypeDeclarationContext
-  // For inner classes: ClassDeclarationContext.parentCtx = MemberDeclarationContext (no TypeDeclarationContext)
-  // Using direct parent avoids falsely treating inner classes of @IsTest outer classes as test classes.
-  const parent = classNode.parentCtx;
-  if (!parent || nodeType(parent) !== "TypeDeclarationContext") return false;
-  return hasAnnotationOn(parent, "istest");
-}
-
-function isInsideTestClass(node: any): boolean {
-  let p = node?.parentCtx;
-  while (p) {
-    if (nodeType(p) === "ClassDeclarationContext" && classIsTest(p)) return true;
-    p = p.parentCtx;
-  }
-  return false;
-}
 
 function methodHasAssert(methodNode: any): boolean {
   let found = false;
@@ -131,7 +86,7 @@ export const testWithoutAsserts: Rule = {
   create(ctx) {
     return {
       MethodDeclarationContext: (node) => {
-        if (!methodIsTest(node)) return;
+        if (!isTestMethod(node)) return;
         if (!methodHasAssert(node)) {
           ctx.report(node, "Test method has no assertions — add System.assertEquals() or Assert.* calls.");
         }
@@ -257,7 +212,7 @@ export const apexUnitTestClassShouldHaveRunAs: Rule = {
   create(ctx) {
     return {
       ClassDeclarationContext: (node) => {
-        if (!classIsTest(node)) return;
+        if (!isTestClass(node)) return;
         let hasRunAs = false;
         walk(node, (n) => {
           if (hasRunAs) return;
@@ -286,12 +241,12 @@ export const testMethodsMustBeInTestClasses: Rule = {
   create(ctx) {
     return {
       MethodDeclarationContext: (node) => {
-        if (!methodIsTest(node)) return;
+        if (!isTestMethod(node)) return;
         // Walk up to find the innermost enclosing class
         let p = node?.parentCtx;
         while (p) {
           if (nodeType(p) === "ClassDeclarationContext") {
-            if (!classIsTest(p)) {
+            if (!isTestClass(p)) {
               const name = node.id ? textOf(node.id()) : "unknown";
               ctx.report(node, `Test method "${name}" is in a non-@IsTest class — the test runner will never execute it. Add @IsTest to the class.`);
             }

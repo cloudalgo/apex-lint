@@ -1,20 +1,6 @@
 import type { Rule } from "../engine/types.js";
 import { enclosingMethod, nodeType, textOf, walk } from "../ast/walk.js";
-
-function classHasIsTest(classNode: any): boolean {
-  const typeDecl = classNode.parentCtx;
-  if (!typeDecl) return false;
-  for (let i = 0; i < (typeDecl.getChildCount?.() ?? 0); i++) {
-    const child = typeDecl.getChild(i);
-    if (nodeType(child) !== "ModifierContext") continue;
-    for (let j = 0; j < (child.getChildCount?.() ?? 0); j++) {
-      const ann = child.getChild(j);
-      if (nodeType(ann) === "AnnotationContext" &&
-          textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase() === "istest") return true;
-    }
-  }
-  return false;
-}
+import { isTestClass } from "../ast/apex-helpers.js";
 
 /**
  * UnguardedCrudOperation — the worked example of a *type-aware* rule.
@@ -141,7 +127,7 @@ export const unguardedCrudOperation: Rule = {
     const listener: Record<string, (n: any) => void> = {
       ClassDeclarationContext: (node) => {
         if (nodeType(node.parentCtx) === "TypeDeclarationContext") {
-          inTestClass = classHasIsTest(node);
+          inTestClass = isTestClass(node);
         }
       },
     };

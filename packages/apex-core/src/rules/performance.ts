@@ -1,5 +1,6 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, isInsideLoop, walk } from "../ast/walk.js";
+import { isInsideTestClass } from "../ast/apex-helpers.js";
 
 /**
  * Collect collection variable names populated from scope in a batch execute() method.
@@ -144,31 +145,6 @@ export const httpCalloutInLoop: Rule = {
   },
 };
 
-/** True when a class's TypeDeclarationContext parent has @IsTest. */
-function classNodeIsTest(classNode: any): boolean {
-  const typeDecl = classNode.parentCtx;
-  if (!typeDecl) return false;
-  for (let i = 0; i < (typeDecl.getChildCount?.() ?? 0); i++) {
-    const mod = typeDecl.getChild(i);
-    if (nodeType(mod) !== "ModifierContext") continue;
-    for (let j = 0; j < (mod.getChildCount?.() ?? 0); j++) {
-      const ann = mod.getChild(j);
-      if (nodeType(ann) === "AnnotationContext" &&
-          textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase() === "istest") return true;
-    }
-  }
-  return false;
-}
-
-/** Walk the parent chain to check if any enclosing class has @IsTest. */
-function isInsideTestClass(node: any): boolean {
-  let p = node?.parentCtx;
-  while (p) {
-    if (nodeType(p) === "ClassDeclarationContext" && classNodeIsTest(p)) return true;
-    p = p.parentCtx;
-  }
-  return false;
-}
 
 /**
  * SOQL query with no WHERE clause — can scan all records and hit governor limits.
