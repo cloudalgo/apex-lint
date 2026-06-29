@@ -6,28 +6,33 @@
 
 import type { AstNode } from "./contexts.js";
 
+// These accept `AstNode | undefined` because rules routinely call them on
+// nullable positions — `node.parentCtx` (typed `… | undefined`) and ANTLR
+// accessors that return null at runtime (e.g. `node.id()`). Each already
+// null-guards, so widening the type avoids a cast at every call site.
+
 /** Constructor name of a parse-tree node, e.g. "QueryContext". */
-export function nodeType(node: AstNode): string {
+export function nodeType(node: AstNode | undefined): string {
   return node?.constructor?.name ?? "";
 }
 
 /** 1-based source line of a node's first token. */
-export function lineOf(node: AstNode): number {
+export function lineOf(node: AstNode | undefined): number {
   return node?.start?.line ?? 0;
 }
 
 /** 0-based column of a node's first token. */
-export function columnOf(node: AstNode): number {
+export function columnOf(node: AstNode | undefined): number {
   return node?.start?.column ?? 0;
 }
 
 /** Last line covered by the node (falls back to start line). */
-export function endLineOf(node: AstNode): number {
+export function endLineOf(node: AstNode | undefined): number {
   return node?.stop?.line ?? lineOf(node);
 }
 
 /** Raw concatenated text of a node (no whitespace — ANTLR strips it). */
-export function textOf(node: AstNode): string {
+export function textOf(node: AstNode | undefined): string {
   return node?.getText ? node.getText() : "";
 }
 
