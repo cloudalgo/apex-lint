@@ -4,6 +4,23 @@ All notable changes to apex-lint are documented here.
 
 ---
 
+## [0.1.22] — 2026-06-29
+
+### Added
+- **Typed AST** — rule handlers now receive the parser's generated context types instead of `any`, so a wrong-accessor or node-shape mistake is a compile error. New `ast/contexts.ts` is the single seam to the parser; a closed `ContextMap` types the rule listener; `walk`/`report`/the AST helpers are typed to `AstNode`. Behavior unchanged.
+- **Parallel parse + lint** — large runs (≥ 64 files) fan out across a worker-thread pool (~2.9× faster on big codebases; ~8.5 s for 2,242 files). Small runs and `APEX_LINT_NO_PARALLEL=1` stay serial; any worker failure falls back to serial.
+- `DatabaseQueryWithVariable` now also covers `Database.countQuery()` and `Database.getQueryLocator()` sinks.
+
+### Fixed
+- **`UnguardedCrudOperation` now resolves local-variable DML targets** — `variableDeclarator()` was called with no argument and silently returned null, so the rule could only resolve formal-parameter DML; local-variable DML (`List<Account> a = …; insert a;`) was never checked. Now uses `variableDeclarator_list()` (surfaced by the typed-AST migration).
+- `ChainedRelationshipAccess` and `MapGetWithoutNullCheck` — cut false positives on the put-if-absent idiom and related patterns.
+- `AvoidHardcodedId` flags hardcoded IDs inside `@IsTest` classes at low severity rather than skipping them.
+
+### Internal
+- `nodeType`/`textOf`/`lineOf`/etc. accept `AstNode | undefined` (they null-guard); shared test-detection helpers consolidated into `ast/apex-helpers.ts`; no `any` parse-tree positions remain in rules/ast/engine.
+
+---
+
 ## [0.1.21] — 2026-06-27
 
 ### Added

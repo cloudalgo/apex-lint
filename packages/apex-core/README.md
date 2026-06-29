@@ -172,11 +172,13 @@ interface RuleContext {
   filePath: string;
   source: string;
   metadata: MetadataProvider;
-  report(node: any, message: string, overrides?: Partial<Violation>): void;
+  report(node: AstNode, message: string, overrides?: Partial<Violation>): void;
 }
 
-type RuleListener = Record<string, (node: any) => void>;
-// Keys are parse-tree context class names, e.g. "QueryContext", "MethodDeclarationContext"
+// Closed mapped type: each key is a parse-tree context class name and its handler
+// receives that exact type (e.g. a `QueryContext` handler gets a typed QueryContext).
+// `AstNode` and the context types are re-exported from `ast/contexts.ts`.
+type RuleListener = { [K in keyof ContextMap]?: (node: ContextMap[K]) => void };
 ```
 
 ---
@@ -246,7 +248,8 @@ export const myRule: Rule = {
   description: "Detects something expensive in a loop.",
   create(ctx) {
     return {
-      // Key = parse-tree context class name
+      // Key = parse-tree context class name; `node` is typed to that context
+      // (here `QueryContext`), so its accessors are compile-time checked.
       QueryContext: (node) => {
         if (isInsideLoop(node)) {
           ctx.report(node, "SOQL inside a loop — move outside or use bind variables.");

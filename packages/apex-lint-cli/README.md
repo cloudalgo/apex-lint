@@ -53,6 +53,10 @@ Options:
 
 Summary and progress always go to **stderr**; violation output goes to `--output` or stdout — safe to pipe in CI without mixing logs.
 
+**Performance.** Runs of ≥ 64 files parse and lint in parallel across a worker-thread pool (~2.9× faster on large codebases); smaller runs stay serial. Set `APEX_LINT_NO_PARALLEL=1` to force serial execution.
+
+**Environment.** The npm update check is skipped when `CI` or `NO_UPDATE_NOTIFIER` is set.
+
 ---
 
 ## Configuration

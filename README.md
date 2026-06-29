@@ -304,11 +304,15 @@ apex-core
 
 **Key design decisions:**
 
-1. **Parser is wrapped, never imported by rules.** When the Apex grammar gains new syntax, only `ast/parser.ts` moves. Every rule keeps working.
+1. **Parser is wrapped, never imported by rules.** `ast/contexts.ts` is the single seam to `@apexdevtools/apex-parser` — it re-exports the parser's generated context types so rules import them from `ast/`, never the parser package. When the grammar changes, only the wrapper moves.
 
-2. **Type-aware rules depend on `MetadataProvider`, not on an org.** `UnguardedCrudOperation` runs identically in CI (filesystem) and embedded in an app (live org). With no provider it degrades silently rather than firing false positives.
+2. **Typed AST.** Rule handlers receive the parser's generated context types, not `any` — a closed `ContextMap` maps each dispatched context name to its type, so calling a non-existent accessor (or a typo) is a compile error. `walk`/`report`/the AST helpers are typed to `AstNode`. Dispatch stays `node.constructor.name`-keyed with one controlled cast in the engine.
 
-3. **Taint analysis for security rules.** `ApexSOQLInjection`, `ApexOpenRedirect`, `ApexSSRF`, and `ApexXSSFromURLParam` use PMD-style intra-method forward propagation — variables seeded from VF params, REST request body, or cookies are tracked through assignment chains to injection sinks. No false positives from safe internal variables.
+3. **Type-aware rules depend on `MetadataProvider`, not on an org.** `UnguardedCrudOperation` runs identically in CI (filesystem) and embedded in an app (live org). With no provider it degrades silently rather than firing false positives.
+
+4. **Taint analysis for security rules.** `ApexSOQLInjection`, `ApexOpenRedirect`, `ApexSSRF`, and `ApexXSSFromURLParam` share an intra-method, AST-ordered taint engine (`engine/taint.ts`, computed once per method and cached) — variables seeded from VF params, REST request body, cookies, or `public`/`global`/`webservice` method parameters are tracked through assignment chains to injection sinks.
+
+5. **Parallel by default.** Large runs fan out parse+lint across a worker-thread pool (each worker rebuilds its rule set and metadata from the serializable config); small runs stay serial.
 
 ---
 
@@ -325,6 +329,8 @@ export const myRule: Rule = {
   description: "One-line description shown in --list-rules.",
   create(ctx) {
     return {
+      // `node` is typed `QueryContext` (from the closed ContextMap) — its
+      // accessors are checked at compile time.
       QueryContext: (node) => {
         if (isInsideLoop(node)) ctx.report(node, "SOQL inside a loop hits governor limits.");
       },
@@ -333,7 +339,7 @@ export const myRule: Rule = {
 };
 ```
 
-Register in `rules/index.ts`. To discover which context type a construct produces, walk a sample file and print `node.constructor.name` — see existing rules for examples.
+Register in `rules/index.ts`. To discover which context type a construct produces, walk a sample file and print `node.constructor.name`. If you dispatch on a context not yet in the closed `ContextMap` (`ast/contexts.ts`), `tsc` flags it — add the one-line entry.
 
 ---
 
@@ -341,7 +347,7 @@ Register in `rules/index.ts`. To discover which context type a construct produce
 
 - **PMD ruleset import** — read `ruleset.xml`, map rule enable/severity to apex-lint config.
 - **Baseline file** — snapshot current violations, fail only on *new* ones (key adoption feature for legacy orgs).
-- **Parallelism + cache** — worker_threads with per-file hash cache for large monorepos.
+- **Incremental cache** — per-file hash cache to skip unchanged files (parse+lint is already parallelized across worker threads).
 - **Cross-method taint** — extend taint propagation beyond single methods using a per-class call graph.
 
 ---
