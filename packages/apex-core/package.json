@@ -16,7 +16,8 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@apexdevtools/apex-parser": "^5.0.0"
+    "@apexdevtools/apex-parser": "^5.0.0",
+    "antlr4": "^4.13.2"
   },
   "license": "BSD-3-Clause",
   "repository": {
