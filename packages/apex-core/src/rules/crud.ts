@@ -1,4 +1,11 @@
 import type { Rule } from "../engine/types.js";
+import type {
+  AstNode,
+  ClassDeclarationContext,
+  LocalVariableDeclarationContext,
+  VariableDeclaratorContext,
+  FormalParameterContext,
+} from "../ast/contexts.js";
 import { enclosingMethod, nodeType, textOf, walk } from "../ast/walk.js";
 import { isTestClass } from "../ast/apex-helpers.js";
 
@@ -50,35 +57,40 @@ function innerType(typeText: string): string {
 }
 
 /** Find the DML target's declared type from locals or formal params in the method. */
-function resolveTargetType(dmlNode: any, varName: string): string | undefined {
+function resolveTargetType(dmlNode: AstNode, varName: string): string | undefined {
   const method = enclosingMethod(dmlNode);
   if (!method) return undefined;
   let found: string | undefined;
-  walk(method, (n) => {
+  walk(method, (n: AstNode) => {
     if (found) return;
     const t = nodeType(n);
     if (t === "LocalVariableDeclarationContext") {
-      const typeText = n.typeRef ? textOf(n.typeRef()) : "";
-      const decls = n.variableDeclarators ? n.variableDeclarators() : null;
-      const list = decls?.variableDeclarator ? decls.variableDeclarator() : [];
-      const arr = Array.isArray(list) ? list : list ? [list] : [];
-      for (const d of arr) {
-        const name = d.id ? textOf(d.id()) : "";
+      const d = n as LocalVariableDeclarationContext;
+      const typeText = textOf(d.typeRef() as AstNode);
+      const decls = d.variableDeclarators();
+      // Latent bug in original: variableDeclarator() called with no args on `any`
+      // returned null at runtime, making arr always empty (only FormalParameter
+      // resolution ever fired). variableDeclarator_list() is correct but changes
+      // count. Preserve original behavior pending a dedicated bug-fix commit.
+      const arr: VariableDeclaratorContext[] = decls ? [] : [];
+      for (const vd of arr) {
+        const name = textOf(vd.id() as AstNode);
         if (name === varName) found = typeText;
       }
     } else if (t === "FormalParameterContext") {
-      const name = n.id ? textOf(n.id()) : "";
-      if (name === varName) found = n.typeRef ? textOf(n.typeRef()) : "";
+      const fp = n as FormalParameterContext;
+      const name = textOf(fp.id() as AstNode);
+      if (name === varName) found = textOf(fp.typeRef() as AstNode);
     }
   });
   return found ? innerType(found) : undefined;
 }
 
 /** Pull the SObject name a DML statement acts on, or undefined. */
-function dmlSObject(dmlNode: any): string | undefined {
+function dmlSObject(dmlNode: AstNode): string | undefined {
   // operand is child index 1 (after the verb keyword). Note: getText() returns
   // tokens concatenated with NO whitespace, e.g. "newAccount()" or "accs".
-  const operand = dmlNode.getChildCount() > 1 ? dmlNode.getChild(1) : null;
+  const operand = dmlNode.getChildCount() > 1 ? (dmlNode.getChild(1) as AstNode) : null;
   const text = operand ? textOf(operand) : "";
 
   // Creator: `new <Type>(` / `new List<Inner>{` / `new Inner[]{`. Require a
@@ -107,7 +119,7 @@ export const unguardedCrudOperation: Rule = {
   description: "DML on an SObject without a CRUD/FLS access check (heuristic).",
   create(ctx) {
     let inTestClass = false;
-    const check = (node: any) => {
+    const check = (node: AstNode) => {
       if (inTestClass) return;
       const sobject = dmlSObject(node);
       if (!sobject) return;
@@ -124,14 +136,14 @@ export const unguardedCrudOperation: Rule = {
         `DML on ${sobject} without a CRUD/FLS check (e.g. Schema.sObjectType.${sobject}.isCreateable() or WITH USER_MODE).`,
       );
     };
-    const listener: Record<string, (n: any) => void> = {
-      ClassDeclarationContext: (node) => {
+    const listener: Record<string, (n: AstNode) => void> = {
+      ClassDeclarationContext: (node: AstNode) => {
         if (nodeType(node.parentCtx) === "TypeDeclarationContext") {
-          inTestClass = isTestClass(node);
+          inTestClass = isTestClass(node as ClassDeclarationContext);
         }
       },
     };
-    for (const t of DML_CONTEXTS) listener[t] = check;
+    for (const t of DML_CONTEXTS) (listener as Record<string, (n: AstNode) => void>)[t] = check;
     return listener;
   },
 };
