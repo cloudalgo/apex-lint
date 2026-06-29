@@ -74,7 +74,9 @@ export class Linter {
     walk(tree, (node) => {
       const t = nodeType(node);
       for (const { listener } of bound) {
-        const handler = listener[t];
+        // Cast is sound: t === node.constructor.name, so the handler's expected
+        // type matches the actual runtime type.
+        const handler = listener[t as keyof typeof listener] as ((n: typeof node) => void) | undefined;
         if (handler) handler(node);
       }
     });

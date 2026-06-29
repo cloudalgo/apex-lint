@@ -1,4 +1,6 @@
 import type { MetadataProvider } from "../metadata/provider.js";
+import type { AstNode, RuleListener } from "../ast/contexts.js";
+export type { RuleListener } from "../ast/contexts.js";
 
 export type Severity = "critical" | "high" | "moderate" | "low" | "info";
 
@@ -33,7 +35,7 @@ export interface RuleContext {
   source: string;
   metadata: MetadataProvider;
   /** Rules call this to emit a finding; severity/category default from the rule. */
-  report(node: any, message: string, overrides?: Partial<Violation>): void;
+  report(node: AstNode, message: string, overrides?: Partial<Violation>): void;
 }
 
 /**
@@ -41,8 +43,8 @@ export interface RuleContext {
  * (e.g. "QueryContext", "DeleteStatementContext"). The engine does ONE walk and
  * dispatches each node to the matching handlers. This is the ESLint model —
  * cheap to add rules, and traversal cost is shared across all of them.
+ * (Re-exported from ast/contexts.ts — the closed typed mapped type.)
  */
-export type RuleListener = Record<string, ((node: any) => void) | undefined>;
 
 export interface Rule {
   /** Stable identifier, PascalCase, e.g. "SoqlInLoop". Used in configs/suppressions. */

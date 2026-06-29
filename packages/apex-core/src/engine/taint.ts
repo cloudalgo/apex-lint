@@ -1,4 +1,9 @@
 import { walk, nodeType, textOf } from "../ast/walk.js";
+import type {
+  FormalParameterContext,
+  VariableDeclaratorContext,
+  LocalVariableDeclarationContext,
+} from "../ast/contexts.js";
 
 const ENTRY_MODIFIER = /^(public|global|webservice)$/;
 
@@ -22,7 +27,9 @@ export function entryPointParamNames(methodNode: any): string[] {
   const fp = methodNode?.formalParameters ? methodNode.formalParameters() : null;
   if (fp) {
     walk(fp, (p) => {
-      if (nodeType(p) === "FormalParameterContext" && p.id) names.push(textOf(p.id()));
+      if (nodeType(p) !== "FormalParameterContext") return;
+      const fp2 = p as unknown as FormalParameterContext;
+      if (fp2.id) names.push(textOf(fp2.id()));
     });
   }
   return names;
@@ -103,8 +110,10 @@ function computeTaint(methodNode: any, sanitizers: string[]): TaintResult {
     const fp = methodNode?.formalParameters ? methodNode.formalParameters() : null;
     if (fp) {
       walk(fp, (p) => {
-        if (nodeType(p) !== "FormalParameterContext" || !p.id || !p.typeRef) return;
-        if (isInjectableType(textOf(p.typeRef()))) tainted.add(textOf(p.id()).toLowerCase());
+        if (nodeType(p) !== "FormalParameterContext") return;
+        const fp2 = p as unknown as FormalParameterContext;
+        if (!fp2.id || !fp2.typeRef) return;
+        if (isInjectableType(textOf(fp2.typeRef()))) tainted.add(textOf(fp2.id()).toLowerCase());
       });
     }
   }
@@ -113,18 +122,20 @@ function computeTaint(methodNode: any, sanitizers: string[]): TaintResult {
   const steps: { name: string; rhs: string }[] = [];
   walk(methodNode, (n) => {
     const t = nodeType(n);
-    if (t === "VariableDeclaratorContext" && n.id) {
+    if (t === "VariableDeclaratorContext") {
+      const vd = n as unknown as VariableDeclaratorContext;
+      if (!vd.id) return;
       // Skip declarations whose declared type cannot carry injectable content
       // (e.g. `Boolean b = (term == 'x')`, `Integer n = term.length()`).
-      const ldecl = n.parentCtx?.parentCtx;
+      const ldecl = n.parentCtx?.parentCtx as unknown as LocalVariableDeclarationContext | undefined;
       const declType = ldecl?.typeRef ? textOf(ldecl.typeRef()) : "";
       if (declType && !isInjectableType(declType)) return;
-      const name = textOf(n.id()).toLowerCase();
+      const name = textOf(vd.id()).toLowerCase();
       const full = textOf(n).toLowerCase();
       const eq = full.indexOf("=");
       if (eq >= 0) steps.push({ name, rhs: full.slice(eq + 1) });
     } else if (t === "AssignExpressionContext") {
-      const lhs = textOf(n.getChild(0)).toLowerCase();
+      const lhs = textOf(n.getChild(0) as typeof n).toLowerCase();
       if (/^[a-z_][a-z0-9_]*$/.test(lhs)) {
         const full = textOf(n).toLowerCase();
         const eq = full.indexOf("=");

@@ -37,8 +37,7 @@ export function textOf(node: AstNode | undefined): string {
 }
 
 /** Depth-first pre-order walk. `visit` is called once per node. */
-// visit stays loose until rules are migrated (Task 10 tightens it)
-export function walk(node: AstNode, visit: (n: any) => void): void {
+export function walk(node: AstNode, visit: (n: AstNode) => void): void {
   if (!node) return;
   visit(node);
   const count = node.getChildCount ? node.getChildCount() : 0;

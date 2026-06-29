@@ -5,15 +5,16 @@
  * begun to drift. This is the single source of truth.
  */
 import { nodeType, textOf } from "./walk.js";
+import type { AstNode } from "./contexts.js";
 
 /** True if `node`'s direct ModifierContext children include `@<annotName>`. */
-export function hasAnnotation(node: any, annotName: string): boolean {
+export function hasAnnotation(node: AstNode, annotName: string): boolean {
   const lower = annotName.toLowerCase();
   for (let i = 0; i < (node?.getChildCount?.() ?? 0); i++) {
-    const modifier = node.getChild(i);
+    const modifier = node.getChild(i) as AstNode;
     if (nodeType(modifier) !== "ModifierContext") continue;
     for (let j = 0; j < (modifier.getChildCount?.() ?? 0); j++) {
-      const ann = modifier.getChild(j);
+      const ann = modifier.getChild(j) as AstNode;
       if (nodeType(ann) !== "AnnotationContext") continue;
       if (textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase() === lower) return true;
     }
@@ -28,14 +29,14 @@ export function hasAnnotation(node: any, annotName: string): boolean {
  * excluded, so a helper class nested in an `@IsTest` outer class is not itself
  * treated as test code.
  */
-export function isTestClass(classNode: any): boolean {
+export function isTestClass(classNode: AstNode): boolean {
   const parent = classNode?.parentCtx;
   if (!parent || nodeType(parent) !== "TypeDeclarationContext") return false;
   return hasAnnotation(parent, "istest");
 }
 
 /** True if any enclosing class of `node` is an `@IsTest` class. */
-export function isInsideTestClass(node: any): boolean {
+export function isInsideTestClass(node: AstNode): boolean {
   let p = node?.parentCtx;
   while (p) {
     if (nodeType(p) === "ClassDeclarationContext" && isTestClass(p)) return true;
@@ -48,12 +49,12 @@ export function isInsideTestClass(node: any): boolean {
  * True if `methodNode` is a test method — `@IsTest` on its enclosing
  * ClassBodyDeclarationContext, or the legacy `testMethod` modifier keyword.
  */
-export function isTestMethod(methodNode: any): boolean {
+export function isTestMethod(methodNode: AstNode): boolean {
   const cbDecl = methodNode?.parentCtx?.parentCtx;
   if (!cbDecl) return false;
   if (nodeType(cbDecl) === "ClassBodyDeclarationContext" && hasAnnotation(cbDecl, "istest")) return true;
   for (let i = 0; i < (cbDecl.getChildCount?.() ?? 0); i++) {
-    const c = cbDecl.getChild(i);
+    const c = cbDecl.getChild(i) as AstNode;
     if (nodeType(c) === "ModifierContext" && textOf(c).toLowerCase() === "testmethod") return true;
   }
   return false;

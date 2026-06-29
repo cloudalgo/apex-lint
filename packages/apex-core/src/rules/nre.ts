@@ -3,6 +3,7 @@ import { nodeType, textOf, lineOf, walk } from "../ast/walk.js";
 import { isInsideTestClass } from "../ast/apex-helpers.js";
 import type {
   AstNode,
+  ConstructorDeclarationContext,
   MethodDeclarationContext,
   DotExpressionContext,
   QueryContext,
@@ -122,7 +123,7 @@ export const mapGetWithoutNullCheck: Rule = {
     let scopeStartLine = 1;
     return {
       MethodDeclarationContext: (node: MethodDeclarationContext) => { scopeStartLine = node.start?.line ?? 1; },
-      ConstructorDeclarationContext: (node) => { scopeStartLine = node.start?.line ?? 1; },
+      ConstructorDeclarationContext: (node: ConstructorDeclarationContext) => { scopeStartLine = node.start?.line ?? 1; },
       DotExpressionContext: (node: DotExpressionContext) => {
         if (isInsideTestClass(node)) return;
         const text = textOf(node);
@@ -343,7 +344,7 @@ export const soqlResultNotNullChecked: Rule = {
         reportedVarLines.clear();
       },
 
-      ConstructorDeclarationContext: (_node) => {
+      ConstructorDeclarationContext: (_node: ConstructorDeclarationContext) => {
         soqlVars.clear();
         reportedVarLines.clear();
       },
@@ -504,7 +505,7 @@ export const mapGetResultNotNullChecked: Rule = {
         scopeStartLine = node.start?.line ?? 1;
       },
 
-      ConstructorDeclarationContext: (node) => {
+      ConstructorDeclarationContext: (node: ConstructorDeclarationContext) => {
         mapGetVars.clear();
         reportedVarLines.clear();
         scopeStartLine = node.start?.line ?? 1;
