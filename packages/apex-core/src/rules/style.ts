@@ -1,6 +1,17 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, walk } from "../ast/walk.js";
 import { hasAnnotation, isTestMethod, isTestClass, isInsideTestClass } from "../ast/apex-helpers.js";
+import type {
+  AstNode,
+  AnnotationContext,
+  CatchClauseContext,
+  ClassBodyDeclarationContext,
+  ClassDeclarationContext,
+  DotExpressionContext,
+  LiteralContext,
+  MethodDeclarationContext,
+  ModifierContext,
+} from "../ast/contexts.js";
 
 /** Catch block with no statements — swallows exceptions silently. */
 export const emptyCatchBlock: Rule = {
@@ -10,7 +21,7 @@ export const emptyCatchBlock: Rule = {
   description: "Catch blocks should not be empty; at minimum log the exception.",
   create(ctx) {
     return {
-      CatchClauseContext: (node) => {
+      CatchClauseContext: (node: CatchClauseContext) => {
         const block = node.block ? node.block() : null;
         if (!block) return;
         // child count ≤ 2 means only the '{' and '}' terminals — truly empty.
@@ -34,13 +45,13 @@ export const methodNamingConventions: Rule = {
   description: "Method names should be in camelCase.",
   create(ctx) {
     return {
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         // Test methods and helpers in test classes commonly use underscores
         if (isTestMethod(node) || isInsideTestClass(node)) return;
         const idNode = node.id ? node.id() : null;
-        const name = idNode ? textOf(idNode) : "";
+        const name = idNode ? textOf(idNode as AstNode) : "";
         if (name && !CAMEL_CASE.test(name)) {
-          ctx.report(idNode ?? node, `Method "${name}" should be camelCase.`);
+          ctx.report(idNode ? (idNode as AstNode) : node, `Method "${name}" should be camelCase.`);
         }
       },
     };
@@ -48,9 +59,9 @@ export const methodNamingConventions: Rule = {
 };
 
 
-function methodHasAssert(methodNode: any): boolean {
+function methodHasAssert(methodNode: AstNode): boolean {
   let found = false;
-  walk(methodNode, (child) => {
+  walk(methodNode, (child: AstNode) => {
     if (found) return;
     const nt = nodeType(child);
     if (nt === "DotExpressionContext") {
@@ -85,7 +96,7 @@ export const testWithoutAsserts: Rule = {
   description: "Test methods should contain at least one assertion.",
   create(ctx) {
     return {
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         if (!isTestMethod(node)) return;
         if (!methodHasAssert(node)) {
           ctx.report(node, "Test method has no assertions — add System.assertEquals() or Assert.* calls.");
@@ -103,7 +114,7 @@ export const seeAllDataTrue: Rule = {
   description: "@IsTest(SeeAllData=true) makes tests depend on live org data — use test factories instead.",
   create(ctx) {
     return {
-      AnnotationContext: (node) => {
+      AnnotationContext: (node: AnnotationContext) => {
         if (textOf(node).toLowerCase().includes("seealldata=true")) {
           ctx.report(node, "@IsTest(SeeAllData=true) accesses live org data — tests become order-dependent and fail in scratch orgs.");
         }
@@ -124,14 +135,14 @@ export const inaccessibleAuraEnabledGetter: Rule = {
   description: "@AuraEnabled members without public or global access are inaccessible from LWC.",
   create(ctx) {
     return {
-      ClassBodyDeclarationContext: (node) => {
+      ClassBodyDeclarationContext: (node: ClassBodyDeclarationContext) => {
         // Check for @AuraEnabled annotation
         let hasAuraEnabled = false;
         for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-          const modifier = node.getChild(i);
+          const modifier = node.getChild(i) as AstNode;
           if (nodeType(modifier) !== "ModifierContext") continue;
           for (let j = 0; j < (modifier.getChildCount?.() ?? 0); j++) {
-            const ann = modifier.getChild(j);
+            const ann = modifier.getChild(j) as AstNode;
             if (nodeType(ann) !== "AnnotationContext") continue;
             if (textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase() === "auraenabled") {
               hasAuraEnabled = true;
@@ -141,7 +152,7 @@ export const inaccessibleAuraEnabledGetter: Rule = {
         if (!hasAuraEnabled) return;
         // Require public or global access modifier
         for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-          const child = node.getChild(i);
+          const child = node.getChild(i) as AstNode;
           if (nodeType(child) === "ModifierContext") {
             const t = textOf(child).toLowerCase();
             if (t === "public" || t === "global") return;
@@ -165,7 +176,7 @@ export const apexXSSFromEscapeFalse: Rule = {
   description: "addError() with escapeXml=false disables XML escaping and may allow XSS.",
   create(ctx) {
     return {
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         const t = textOf(node).toLowerCase();
         if (!t.includes(".adderror(") || !t.endsWith(",false)")) return;
         // Extract the message argument (between .addError( and ,false))
@@ -190,7 +201,7 @@ export const apexUnitTestMethodShouldHaveIsTestAnnotation: Rule = {
   description: "Deprecated 'testMethod' keyword should be replaced with @IsTest annotation.",
   create(ctx) {
     return {
-      ModifierContext: (node) => {
+      ModifierContext: (node: ModifierContext) => {
         if (textOf(node).toLowerCase() === "testmethod") {
           ctx.report(node, "Deprecated 'testMethod' keyword — use @IsTest annotation on the method instead.");
         }
@@ -211,10 +222,10 @@ export const apexUnitTestClassShouldHaveRunAs: Rule = {
   description: "Test classes should have at least one System.runAs() call to verify user-context behavior.",
   create(ctx) {
     return {
-      ClassDeclarationContext: (node) => {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
         if (!isTestClass(node)) return;
         let hasRunAs = false;
-        walk(node, (n) => {
+        walk(node, (n: AstNode) => {
           if (hasRunAs) return;
           if (nodeType(n) === "DotExpressionContext" && textOf(n).toLowerCase().startsWith("system.runas(")) {
             hasRunAs = true;
@@ -240,14 +251,14 @@ export const testMethodsMustBeInTestClasses: Rule = {
   description: "@IsTest methods in non-@IsTest classes are never executed by the test runner.",
   create(ctx) {
     return {
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         if (!isTestMethod(node)) return;
         // Walk up to find the innermost enclosing class
         let p = node?.parentCtx;
         while (p) {
           if (nodeType(p) === "ClassDeclarationContext") {
             if (!isTestClass(p)) {
-              const name = node.id ? textOf(node.id()) : "unknown";
+              const name = node.id ? textOf(node.id() as AstNode) : "unknown";
               ctx.report(node, `Test method "${name}" is in a non-@IsTest class — the test runner will never execute it. Add @IsTest to the class.`);
             }
             return;
@@ -271,23 +282,25 @@ export const overrideBothEqualsAndHashcode: Rule = {
   description: "Overriding equals() without hashCode() (or vice versa) breaks Map and Set behavior.",
   create(ctx) {
     return {
-      ClassDeclarationContext: (node) => {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
         let hasEquals = false;
         let hasHashCode = false;
         // Only check direct class body members, not inner classes
         for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-          const body = node.getChild(i);
+          const body = node.getChild(i) as AstNode;
           if (nodeType(body) !== "ClassBodyContext") continue;
           for (let j = 0; j < (body.getChildCount?.() ?? 0); j++) {
-            const decl = body.getChild(j);
+            const decl = body.getChild(j) as AstNode;
             if (nodeType(decl) !== "ClassBodyDeclarationContext") continue;
             for (let k = 0; k < (decl.getChildCount?.() ?? 0); k++) {
-              const member = decl.getChild(k);
+              const member = decl.getChild(k) as AstNode;
               if (nodeType(member) !== "MemberDeclarationContext") continue;
               for (let m = 0; m < (member.getChildCount?.() ?? 0); m++) {
-                const mDecl = member.getChild(m);
-                if (nodeType(mDecl) !== "MethodDeclarationContext" || !mDecl.id) continue;
-                const name = textOf(mDecl.id()).toLowerCase();
+                const mDecl = member.getChild(m) as AstNode;
+                if (nodeType(mDecl) !== "MethodDeclarationContext") continue;
+                const typedMDecl = mDecl as MethodDeclarationContext;
+                if (!typedMDecl.id) continue;
+                const name = textOf(typedMDecl.id() as AstNode).toLowerCase();
                 if (name === "equals") hasEquals = true;
                 if (name === "hashcode") hasHashCode = true;
               }
@@ -295,7 +308,7 @@ export const overrideBothEqualsAndHashcode: Rule = {
           }
         }
         if (hasEquals === hasHashCode) return; // both or neither — ok
-        const className = node.id ? textOf(node.id()) : "class";
+        const className = node.id ? textOf(node.id() as AstNode) : "class";
         const msg = hasEquals
           ? `Class "${className}" overrides equals() but not hashCode() — breaks Map and Set behavior.`
           : `Class "${className}" overrides hashCode() but not equals() — inconsistent equality semantics.`;
@@ -313,7 +326,7 @@ export const hardcodedUrl: Rule = {
   description: "Hardcoded HTTP/HTTPS URLs should use Named Credentials or Custom Metadata.",
   create(ctx) {
     return {
-      LiteralContext: (node) => {
+      LiteralContext: (node: LiteralContext) => {
         if (isInsideTestClass(node)) return;
         const t = textOf(node).toLowerCase();
         if (t.startsWith("'http://") || t.startsWith("'https://")) {
@@ -336,7 +349,7 @@ export const avoidGlobalModifier: Rule = {
   description: "Global classes should be avoided — they cannot be deleted once packaged.",
   create(ctx) {
     return {
-      ModifierContext: (node) => {
+      ModifierContext: (node: ModifierContext) => {
         if (textOf(node).toLowerCase() === "global") {
           ctx.report(node, "Avoid 'global' access modifier — use 'public' instead. Global members cannot be removed in managed packages.");
         }
@@ -357,7 +370,7 @@ export const debugsShouldUseLoggingLevel: Rule = {
   description: "System.debug() without a LoggingLevel argument uses the default level and wastes CPU in production.",
   create(ctx) {
     return {
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         const t = textOf(node).toLowerCase();
         // PMD: count(*)=2 — fires only when there is exactly 1 argument (no LoggingLevel).
         // Do NOT match on text of the arg: system.debug(level, msg) has 2 args and is correct
@@ -396,7 +409,7 @@ export const apexAssertionsShouldIncludeMessage: Rule = {
   description: "Test assertions should include a failure message as the last argument.",
   create(ctx) {
     return {
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         // PMD: AbstractApexUnitTestRule — only fires inside @IsTest classes.
         // Production classes may contain System.assert() for defensive checks; those are out of scope.
         if (!isInsideTestClass(node)) return;
@@ -426,10 +439,10 @@ export const queueableWithoutFinalizer: Rule = {
   description: "Queueable implementations should attach a Finalizer for robust error handling.",
   create(ctx) {
     return {
-      ClassDeclarationContext: (node) => {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
         let implementsText = "";
         for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-          const child = node.getChild(i);
+          const child = node.getChild(i) as AstNode;
           if (nodeType(child) === "TypeListContext") {
             implementsText = textOf(child).toLowerCase();
             break;
@@ -437,7 +450,7 @@ export const queueableWithoutFinalizer: Rule = {
         }
         if (!implementsText.includes("queueable")) return;
         let hasFinalizer = false;
-        walk(node, (n) => {
+        walk(node, (n: AstNode) => {
           if (hasFinalizer) return;
           if (nodeType(n) === "DotExpressionContext" && textOf(n).toLowerCase().startsWith("system.attachfinalizer(")) {
             hasFinalizer = true;

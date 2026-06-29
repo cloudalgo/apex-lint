@@ -1,6 +1,15 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, lineOf, walk } from "../ast/walk.js";
 import { isInsideTestClass } from "../ast/apex-helpers.js";
+import type {
+  AstNode,
+  ConstructorDeclarationContext,
+  MethodDeclarationContext,
+  DotExpressionContext,
+  QueryContext,
+  VariableDeclaratorContext,
+  LocalVariableDeclarationContext,
+} from "../ast/contexts.js";
 
 // ─── MapGetWithoutNullCheck helpers ──────────────────────────────────────────
 
@@ -45,7 +54,7 @@ function extractMapName(text: string): string {
  * Returns true if node is inside a for-each loop whose iterable is
  * `<mapName>.keySet()` — meaning get(key) can never return null.
  */
-function isInKeySetLoop(node: any, mapName: string): boolean {
+function isInKeySetLoop(node: AstNode, mapName: string): boolean {
   if (!mapName) return false;
   let p = node.parentCtx;
   while (p) {
@@ -59,10 +68,28 @@ function isInKeySetLoop(node: any, mapName: string): boolean {
 }
 
 /**
+ * Returns true if the key was ensured present earlier in the method via the
+ * put-if-absent idiom — either `<map>.containsKey(<key>)` or `<map>.put(<key>, …)`
+ * (both the `if(!m.containsKey(k))` and `if(m.get(k)==null)` forms end in a put).
+ * Same-key matching: a put/containsKey with a different key does not suppress.
+ * `keys` and `mapName` come from textOf (already whitespace-free); scope lines are
+ * whitespace-stripped to match.
+ */
+function keyEnsuredEarlier(mapName: string, keys: string[], scopeLines: string[]): boolean {
+  if (!mapName || keys.length === 0) return false;
+  const scope = scopeLines.join("\n").replace(/\s+/g, "").toLowerCase();
+  const m = mapName.toLowerCase();
+  return keys.some((k) => {
+    const kk = k.toLowerCase();
+    return scope.includes(`${m}.put(${kk}`) || scope.includes(`${m}.containskey(${kk}`);
+  });
+}
+
+/**
  * Returns true if node is inside an if/while block whose condition contains
  * `<mapName>.containsKey(` — guaranteeing the get() result is non-null.
  */
-function hasContainsKeyGuard(node: any, mapName: string): boolean {
+function hasContainsKeyGuard(node: AstNode, mapName: string): boolean {
   if (!mapName) return false;
   const needle = mapName.toLowerCase() + '.containskey(';
   let p = node.parentCtx;
@@ -90,8 +117,14 @@ export const mapGetWithoutNullCheck: Rule = {
   description: "Map.get() returns null for missing keys — null-check the result or use ?. before accessing the property.",
   create(ctx) {
     const reportedLines = new Set<number>();
+    const sourceLines = ctx.source.split("\n");
+    // 1-based start line of the enclosing method/constructor — backward bound for
+    // put-if-absent guard detection (the guard precedes the dereference).
+    let scopeStartLine = 1;
     return {
-      DotExpressionContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => { scopeStartLine = node.start?.line ?? 1; },
+      ConstructorDeclarationContext: (node: ConstructorDeclarationContext) => { scopeStartLine = node.start?.line ?? 1; },
+      DotExpressionContext: (node: DotExpressionContext) => {
         if (isInsideTestClass(node)) return;
         const text = textOf(node);
         // Exclude safe navigation (?.)
@@ -107,6 +140,8 @@ export const mapGetWithoutNullCheck: Rule = {
         if (isInKeySetLoop(node, mapName)) return;
         // containsKey() guard guarantees non-null get() results.
         if (hasContainsKeyGuard(node, mapName)) return;
+        // put-if-absent earlier in the method ensures the key is present.
+        if (keyEnsuredEarlier(mapName, getCallArguments(text.toLowerCase()), sourceLines.slice(scopeStartLine - 1, line - 1))) return;
         reportedLines.add(line);
         ctx.report(
           node,
@@ -131,18 +166,18 @@ export const soqlResultIndexWithoutCheck: Rule = {
   description: "Inline SOQL result accessed by index — returns empty list if no records found, causing ListException or NRE.",
   create(ctx) {
     return {
-      QueryContext: (node) => {
+      QueryContext: (node: QueryContext) => {
         if (isInsideTestClass(node)) return;
 
         // Walk up to find SoqlLiteralContext, then check if it's accessed by index
         let current = node.parentCtx;
-        let soqlLiteral: any = null;
+        let soqlLiteral: AstNode | undefined;
 
         // Find the SoqlLiteralContext (the [SELECT...] wrapper)
         while (current) {
           const type = nodeType(current);
           if (type === "SoqlLiteralContext") {
-            soqlLiteral = current;
+            soqlLiteral = current as AstNode;
             break;
           }
           // Stop if we hit something that's not part of the chain
@@ -215,6 +250,13 @@ const SYSTEM_NAMESPACES = new Set([
 ]);
 
 /**
+ * Schema describe segments. A chain containing any of these (e.g.
+ * `SObjectType.Opportunity.fields.Amount.Name` or `Opportunity.SObjectType.X`)
+ * is static metadata access — never a record relationship traversal, never null.
+ */
+const DESCRIBE_SEGMENTS = new Set(["sobjecttype", "fields", "fieldsets"]);
+
+/**
  * Detects multi-level sObject property chains that traverse relationships
  * without null guards. Each hop may be null if the relationship field was
  * not included in the SOQL SELECT clause.
@@ -231,7 +273,7 @@ export const chainedRelationshipAccess: Rule = {
   create(ctx) {
     const reportedLines = new Set<number>();
     return {
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         if (isInsideTestClass(node)) return;
         const text = textOf(node);
 
@@ -246,6 +288,9 @@ export const chainedRelationshipAccess: Rule = {
 
         // Exclude known system namespaces (Schema.X.Y, System.X.Y, etc.)
         if (SYSTEM_NAMESPACES.has(parts[0].toLowerCase())) return;
+        // Exclude Schema describe chains (SObjectType.X.fields.Y, X.SObjectType.Z) —
+        // static metadata access, not a relationship traversal.
+        if (parts.some((p) => DESCRIBE_SEGMENTS.has(p.toLowerCase()))) return;
 
         // Only flag if an intermediate segment (not last) is a known sObject relationship
         const intermediate = parts.slice(0, -1); // all but last
@@ -293,24 +338,24 @@ export const soqlResultNotNullChecked: Rule = {
     const reportedVarLines = new Set<string>();
 
     return {
-      MethodDeclarationContext: (_node) => {
+      MethodDeclarationContext: (_node: MethodDeclarationContext) => {
         // Clear per-method to avoid inter-method false positives.
         soqlVars.clear();
         reportedVarLines.clear();
       },
 
-      ConstructorDeclarationContext: (_node) => {
+      ConstructorDeclarationContext: (_node: ConstructorDeclarationContext) => {
         soqlVars.clear();
         reportedVarLines.clear();
       },
 
-      VariableDeclaratorContext: (node) => {
+      VariableDeclaratorContext: (node: VariableDeclaratorContext) => {
         if (isInsideTestClass(node)) return;
         // Check whether the initializer contains a QueryContext with LIMIT 1.
         const expr = node.expression ? node.expression() : null;
         if (!expr) return;
         let hasLimitOneQuery = false;
-        walk(expr, (child) => {
+        walk(expr as AstNode, (child: AstNode) => {
           if (nodeType(child) === "QueryContext") {
             // textOf strips whitespace: "LIMIT1" is what we look for.
             if (textOf(child).toLowerCase().includes("limit1")) hasLimitOneQuery = true;
@@ -319,21 +364,22 @@ export const soqlResultNotNullChecked: Rule = {
         if (!hasLimitOneQuery) return;
 
         // Skip if the variable is a List type — SOQL always returns a non-null list.
-        const localDecl = node.parentCtx?.parentCtx;
+        // parentCtx is VariableDeclaratorsContext; its parentCtx is LocalVariableDeclarationContext.
+        const localDecl = node.parentCtx?.parentCtx as LocalVariableDeclarationContext | undefined;
         if (localDecl && nodeType(localDecl) === "LocalVariableDeclarationContext") {
           if (textOf(localDecl).toLowerCase().startsWith("list<")) return;
         }
 
         // Extract the declared variable name via node.id().
         const idNode = node.id ? node.id() : null;
-        const varName = idNode ? textOf(idNode) : "";
+        const varName = idNode ? textOf(idNode as AstNode) : "";
         if (!varName) return;
 
         const line = node.start?.line ?? 0;
         soqlVars.set(varName.toLowerCase(), line);
       },
 
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         if (isInsideTestClass(node)) return;
         if (soqlVars.size === 0) return;
         const text = textOf(node);
@@ -452,20 +498,20 @@ export const mapGetResultNotNullChecked: Rule = {
     let scopeStartLine = 1;
 
     return {
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         // Clear per-method to avoid inter-method false positives.
         mapGetVars.clear();
         reportedVarLines.clear();
         scopeStartLine = node.start?.line ?? 1;
       },
 
-      ConstructorDeclarationContext: (node) => {
+      ConstructorDeclarationContext: (node: ConstructorDeclarationContext) => {
         mapGetVars.clear();
         reportedVarLines.clear();
         scopeStartLine = node.start?.line ?? 1;
       },
 
-      VariableDeclaratorContext: (node) => {
+      VariableDeclaratorContext: (node: VariableDeclaratorContext) => {
         if (isInsideTestClass(node)) return;
         const expr = node.expression ? node.expression() : null;
         if (!expr) return;
@@ -491,7 +537,7 @@ export const mapGetResultNotNullChecked: Rule = {
         ) return;
 
         const idNode = node.id ? node.id() : null;
-        const varName = idNode ? textOf(idNode) : "";
+        const varName = idNode ? textOf(idNode as AstNode) : "";
         if (!varName) return;
 
         const base = mapReceiverName(exprText);
@@ -502,7 +548,7 @@ export const mapGetResultNotNullChecked: Rule = {
         mapGetVars.set(varName.toLowerCase(), { line, base });
       },
 
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         if (isInsideTestClass(node)) return;
         if (mapGetVars.size === 0) return;
         const text = textOf(node);
@@ -583,7 +629,7 @@ export const triggerContextNullAccess: Rule = {
     const reportedLines = new Set<number>();
 
     return {
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         const text = textOf(node).toLowerCase();
         const line = lineOf(node);
         if (insertOnly && text.startsWith("trigger.old") && !reportedLines.has(line)) {

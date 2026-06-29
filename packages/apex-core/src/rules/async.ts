@@ -1,20 +1,22 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, walk } from "../ast/walk.js";
 import { hasAnnotation } from "../ast/apex-helpers.js";
+import type { AstNode, AnnotationContext, ClassDeclarationContext, MethodDeclarationContext, MethodCallExpressionContext, DotExpressionContext } from "../ast/contexts.js";
 
 /** Collect names of all @future methods in a class body. */
-function collectFutureMethods(classNode: any): Set<string> {
+function collectFutureMethods(classNode: AstNode): Set<string> {
   const result = new Set<string>();
   for (let i = 0; i < (classNode.getChildCount?.() ?? 0); i++) {
-    const classBody = classNode.getChild(i);
+    const classBody = classNode.getChild(i) as AstNode;
     if (nodeType(classBody) !== "ClassBodyContext") continue;
     for (let j = 0; j < (classBody.getChildCount?.() ?? 0); j++) {
-      const decl = classBody.getChild(j);
+      const decl = classBody.getChild(j) as AstNode;
       if (nodeType(decl) !== "ClassBodyDeclarationContext") continue;
       if (!hasAnnotation(decl, "future")) continue;
-      walk(decl, (n) => {
-        if (nodeType(n) === "MethodDeclarationContext" && n.id) {
-          const name = textOf(n.id());
+      walk(decl, (n: AstNode) => {
+        if (nodeType(n) === "MethodDeclarationContext") {
+          const m = n as MethodDeclarationContext;
+          const name = textOf(m.id());
           if (name) result.add(name);
         }
       });
@@ -35,7 +37,7 @@ export const avoidFutureAnnotation: Rule = {
   description: "@future methods are limited — prefer Queueable for new async code.",
   create(ctx) {
     return {
-      AnnotationContext: (node) => {
+      AnnotationContext: (node: AnnotationContext) => {
         const name = textOf(node).replace(/^@/, "").split("(")[0].toLowerCase();
         if (name === "future") {
           ctx.report(node, "@future has no error handling or chaining — implement Queueable with System.attachFinalizer() instead.");
@@ -61,7 +63,7 @@ export const futureMethodChaining: Rule = {
     let currentClassName = "";
 
     return {
-      ClassDeclarationContext: (node) => {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
         // Only re-collect on the outermost class; inner classes cannot declare @future
         // methods in Apex, and overwriting futureMethods would lose the outer set.
         if (nodeType(node.parentCtx) === "TypeDeclarationContext") {
@@ -70,7 +72,7 @@ export const futureMethodChaining: Rule = {
         }
         currentIsFuture = false;
       },
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         currentIsFuture = false;
         const cbDecl = node.parentCtx?.parentCtx; // MemberDeclaration → ClassBodyDeclaration
         if (cbDecl && nodeType(cbDecl) === "ClassBodyDeclarationContext") {
@@ -78,10 +80,10 @@ export const futureMethodChaining: Rule = {
         }
       },
       // Bare method calls like futureB() parse as MethodCallExpressionContext
-      MethodCallExpressionContext: (node) => {
+      MethodCallExpressionContext: (node: MethodCallExpressionContext) => {
         if (!currentIsFuture) return;
         let calleeName = "";
-        walk(node, (child) => {
+        walk(node, (child: AstNode) => {
           if (!calleeName && nodeType(child) === "IdContext") calleeName = textOf(child);
         });
         if (calleeName && futureMethods.has(calleeName)) {
@@ -94,7 +96,7 @@ export const futureMethodChaining: Rule = {
       // Same-class qualified static calls: `this.futureB()` or `ThisClass.futureB()`.
       // Restricted to `this`/the enclosing class name so an unrelated
       // `OtherClass.foo()` with a coincidentally-matching name is not flagged.
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         if (!currentIsFuture) return;
         const text = textOf(node);
         const dot = text.indexOf(".");
@@ -135,7 +137,7 @@ export const triggerInlineLogic: Rule = {
   create(ctx) {
     if (!ctx.filePath.endsWith(".trigger")) return {};
 
-    const listener: Record<string, (n: any) => void> = {
+    const listener: Record<string, (n: AstNode) => void> = {
       QueryContext: (node) => {
         ctx.report(node, "Move SOQL/DML into a handler class — triggers with inline logic are hard to test and impossible to reuse.");
       },

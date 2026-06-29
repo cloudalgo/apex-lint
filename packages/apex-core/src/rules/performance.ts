@@ -1,4 +1,12 @@
 import type { Rule } from "../engine/types.js";
+import type {
+  AstNode,
+  ClassDeclarationContext,
+  MethodDeclarationContext,
+  QueryContext,
+  NewExpressionContext,
+  DotExpressionContext,
+} from "../ast/contexts.js";
 import { nodeType, textOf, isInsideLoop, walk } from "../ast/walk.js";
 import { isInsideTestClass } from "../ast/apex-helpers.js";
 
@@ -7,18 +15,18 @@ import { isInsideTestClass } from "../ast/apex-helpers.js";
  * Handles the common pattern: for(T x : scope) { map.put(x.field, ...); }
  * Then a SOQL using :map.keySet() is still considered scope-bound.
  */
-function collectScopeDerivedVars(methodNode: any, scopeParam: string): Set<string> {
+function collectScopeDerivedVars(methodNode: AstNode, scopeParam: string): Set<string> {
   const derived = new Set<string>();
   const scopeLower = scopeParam.toLowerCase();
-  walk(methodNode, (n) => {
+  walk(methodNode, (n: AstNode) => {
     if (nodeType(n) !== "ForStatementContext") return;
     // Check only the ForControlContext child (the for-each header)
     for (let i = 0; i < (n.getChildCount?.() ?? 0); i++) {
-      const child = n.getChild(i);
+      const child = n.getChild(i) as AstNode;
       if (nodeType(child) !== "ForControlContext") continue;
       if (!textOf(child).toLowerCase().includes(":" + scopeLower)) return;
       // This loop iterates over scope — collect collections assigned inside it
-      walk(n, (inner) => {
+      walk(n, (inner: AstNode) => {
         if (nodeType(inner) !== "DotExpressionContext") return;
         const m = textOf(inner).match(/^([A-Za-z][A-Za-z0-9_]*)\.(?:put|add|addAll)\(/);
         if (m) derived.add(m[1].toLowerCase());
@@ -29,31 +37,31 @@ function collectScopeDerivedVars(methodNode: any, scopeParam: string): Set<strin
   return derived;
 }
 
-function getImplementsText(classNode: any): string {
+function getImplementsText(classNode: AstNode): string {
   for (let i = 0; i < (classNode.getChildCount?.() ?? 0); i++) {
-    const child = classNode.getChild(i);
+    const child = classNode.getChild(i) as AstNode;
     if (nodeType(child) === "TypeListContext") return textOf(child);
   }
   return "";
 }
 
-function getParamNames(methodNode: any): string[] {
+function getParamNames(methodNode: AstNode): string[] {
   const names: string[] = [];
   try {
-    const fp = methodNode.formalParameters?.();
+    const fp = (methodNode as MethodDeclarationContext).formalParameters?.();
     if (!fp) return names;
     // FormalParametersContext → ( FormalParameterListContext )
     for (let i = 0; i < (fp.getChildCount?.() ?? 0); i++) {
-      const list = fp.getChild(i);
+      const list = fp.getChild(i) as AstNode;
       if (nodeType(list) !== "FormalParameterListContext") continue;
       for (let j = 0; j < (list.getChildCount?.() ?? 0); j++) {
-        const param = list.getChild(j);
+        const param = list.getChild(j) as AstNode;
         if (nodeType(param) !== "FormalParameterContext") continue;
         // FormalParameterContext: TypeRefContext ... IdContext(param name)
         // The LAST direct IdContext child is the param name (type ids are nested inside TypeRefContext)
         let paramName = "";
         for (let k = 0; k < (param.getChildCount?.() ?? 0); k++) {
-          const child = param.getChild(k);
+          const child = param.getChild(k) as AstNode;
           if (nodeType(child) === "IdContext") paramName = textOf(child);
         }
         if (paramName) names.push(paramName);
@@ -82,14 +90,14 @@ export const soqlInBatchExecute: Rule = {
     let scopeDerivedVars = new Set<string>();
 
     return {
-      ClassDeclarationContext: (node) => {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
         const implementsText = getImplementsText(node);
         inBatchableClass = implementsText.toLowerCase().includes("database.batchable");
         inBatchExecute = false;
         scopeParamName = "";
         scopeDerivedVars = new Set();
       },
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         if (!inBatchableClass) return;
         inBatchExecute = false;
         scopeParamName = "";
@@ -104,7 +112,7 @@ export const soqlInBatchExecute: Rule = {
           scopeDerivedVars = collectScopeDerivedVars(node, scopeParamName);
         }
       },
-      QueryContext: (node) => {
+      QueryContext: (node: QueryContext) => {
         if (!inBatchExecute || !scopeParamName) return;
         const soqlText = textOf(node).toLowerCase();
         // Apex allows spaces around the bind colon: `IN : var` and `IN :var` are both valid.
@@ -135,7 +143,7 @@ export const httpCalloutInLoop: Rule = {
   description: "HTTP callouts inside loops can exhaust governor limits; batch requests instead.",
   create(ctx) {
     return {
-      NewExpressionContext: (node) => {
+      NewExpressionContext: (node: NewExpressionContext) => {
         const t = textOf(node).toLowerCase();
         if ((t.startsWith("newhttp(") || t.startsWith("newhttprequest(")) && isInsideLoop(node)) {
           ctx.report(node, "HTTP callout inside a loop — collect inputs and batch the request outside the loop.");
@@ -158,7 +166,7 @@ export const avoidNonRestrictiveQueries: Rule = {
   description: "SOQL queries without a WHERE clause can scan all records and hit governor limits.",
   create(ctx) {
     return {
-      QueryContext: (node) => {
+      QueryContext: (node: QueryContext) => {
         if (isInsideTestClass(node)) return;
         // Use the parsed WHERE/LIMIT clause nodes, not substring matching on the
         // query text: a field or object whose name contains "where"/"limit"
@@ -183,7 +191,7 @@ export const systemDebugInLoop: Rule = {
   create(ctx) {
     return {
       // System.debug('x') parses as DotExpressionContext, not MethodCallExpressionContext
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         if (textOf(node).toLowerCase().startsWith("system.debug(") && isInsideLoop(node)) {
           ctx.report(node, "System.debug() inside a loop — move it outside or use a conditional.");
         }
