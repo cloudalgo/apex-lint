@@ -6,6 +6,33 @@ import { isInsideTestClass } from "../ast/apex-helpers.js";
 // `hasWordRef` and `stripStringLiterals` are shared with the taint engine —
 // imported from engine/taint.ts so the two never drift.
 
+// Dynamic-SOQL execution sinks. Each runs a query string built at runtime and is
+// injectable if that string contains unsanitized input. Lower-cased for matching
+// against `textOf(node).toLowerCase()`. Shared by ApexSOQLInjection (taint) and
+// DatabaseQueryWithVariable (coarse) so the two never drift.
+const SOQL_QUERY_SINKS = [
+  "database.query(",
+  "database.querywithbinds(",
+  "database.countquery(",
+  "database.countquerywithbinds(",
+  "database.getquerylocator(",
+  "database.getquerylocatorwithbinds(",
+];
+
+/** Returns true if the (lower-cased) dot-expression text starts with a dynamic SOQL sink call. */
+function isSoqlSink(lowerText: string): boolean {
+  return SOQL_QUERY_SINKS.some((s) => lowerText.startsWith(s));
+}
+
+/**
+ * Inline bracketed SOQL — e.g. getQueryLocator([SELECT … WHERE Id = :x]) — is
+ * compile-checked and only accepts :bind variables, so it is never injectable.
+ * `sinkArgs` is the sink's argument text with the opening paren already removed.
+ */
+function isInlineSoqlArg(sinkArgs: string): boolean {
+  return sinkArgs.trimStart().startsWith("[");
+}
+
 // ─── ApexSharingViolations helpers ───────────────────────────────────────────
 
 const DML_CONTEXT_TYPES = new Set([
@@ -211,12 +238,14 @@ export const apexSOQLInjection: Rule = {
       walk(methodNode, (n) => {
         if (nodeType(n) !== "DotExpressionContext") return;
         const t = textOf(n).toLowerCase();
-        if (!t.startsWith("database.query(") && !t.startsWith("database.querywithbinds(")) return;
+        if (!isSoqlSink(t)) return;
         const parenIdx = t.indexOf("(");
-        const args = stripStringLiterals(stripSoqlSanitizers(t.substring(parenIdx + 1)));
+        const rawArgs = t.substring(parenIdx + 1);
+        if (isInlineSoqlArg(rawArgs)) return; // inline [SELECT …] is bind-safe
+        const args = stripStringLiterals(stripSoqlSanitizers(rawArgs));
         for (const v of tainted) {
           if (hasWordRef(args, v)) {
-            ctx.report(n, `Tainted variable "${v}" from user-controlled input reaches Database.query() — use bind variables (:var) or String.escapeSingleQuotes() to prevent injection.`);
+            ctx.report(n, `Tainted variable "${v}" from user-controlled input reaches a dynamic SOQL query — use bind variables (:var) or String.escapeSingleQuotes() to prevent injection.`);
             return;
           }
         }
@@ -385,7 +414,7 @@ export const databaseQueryWithVariable: Rule = {
       // Database.query(x) parses as DotExpressionContext wrapping DotMethodCallContext
       DotExpressionContext: (node) => {
         const full = textOf(node).toLowerCase();
-        if (!full.startsWith("database.query(") && !full.startsWith("database.querywithbinds(")) return;
+        if (!isSoqlSink(full)) return;
 
         // Find the DotMethodCallContext child and check its first argument
         for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
@@ -397,6 +426,8 @@ export const databaseQueryWithVariable: Rule = {
             const firstArg = grand.getChild(0);
             if (!firstArg) continue;
             const argText = textOf(firstArg);
+            // Inline bracketed SOQL ([SELECT …]) is compile-checked and bind-safe.
+            if (isInlineSoqlArg(argText)) return;
             // Safe only if the whole argument is one static string literal. A
             // concatenation like 'SELECT … = ' + userInput also starts with a
             // quote, so a bare startsWith("'") check would miss the canonical
@@ -405,7 +436,7 @@ export const databaseQueryWithVariable: Rule = {
             if (argText.startsWith("'") && !stripStringLiterals(argText).includes("+")) return;
             ctx.report(
               node,
-              "Database.query() with a non-literal argument — use bind variables or parameterized queries to prevent SOQL injection.",
+              "Dynamic SOQL executed with a non-literal argument — use bind variables or parameterized queries to prevent SOQL injection.",
             );
           }
         }

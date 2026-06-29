@@ -51,13 +51,18 @@ export const avoidHardcodedId: Rule = {
         }
       },
       LiteralContext: (node) => {
-        if (inTestClass) return;
         const raw = textOf(node);
         if (raw.length < 17) return; // 15 chars + 2 quotes
         if (raw[0] !== "'" || raw[raw.length - 1] !== "'") return;
         const inner = raw.slice(1, -1);
         if (isSalesforceId(inner)) {
-          ctx.report(node, `Hardcoded record ID "${inner}" — query or use Custom Metadata instead.`);
+          // Hardcoded IDs in tests are still org-fragile, but lower-risk than in
+          // production code — report them at reduced severity rather than skipping.
+          ctx.report(
+            node,
+            `Hardcoded record ID "${inner}" — query or use Custom Metadata instead.`,
+            inTestClass ? { severity: "low" } : undefined,
+          );
         }
       },
     };

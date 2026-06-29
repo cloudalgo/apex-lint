@@ -30,7 +30,15 @@ test('AvoidHardcodedId: no flag on an 18-char base64-ish token (checksum invalid
   assert.equal(violations(src).length, 0);
 });
 
-test('AvoidHardcodedId: no flag inside a test class', () => {
+test('AvoidHardcodedId: flags inside a test class but at low severity', () => {
   const src = `@IsTest class FooTest { @IsTest static void t() { Id a = '001D000000IqhSLIAZ'; } }`;
-  assert.equal(violations(src).length, 0);
+  const v = violations(src);
+  assert.equal(v.length, 1);
+  assert.equal(v[0].ruleId, 'AvoidHardcodedId');
+  assert.equal(v[0].severity, 'low');
+});
+
+test('AvoidHardcodedId: non-test code keeps the default moderate severity', () => {
+  const src = `public class Foo { void run() { Id a = '001D000000IqhSLIAZ'; } }`;
+  assert.equal(violations(src)[0].severity, 'moderate');
 });

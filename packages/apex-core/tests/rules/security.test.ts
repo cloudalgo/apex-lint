@@ -93,6 +93,69 @@ test('DatabaseQueryWithVariable: no flag for a fully static query', () => {
   assert.equal(dqvViolations(src).length, 0);
 });
 
+// Dynamic-SOQL sinks beyond Database.query(): countQuery, getQueryLocator, and the
+// *WithBinds variants all execute a dynamic query string and are injectable.
+test('DatabaseQueryWithVariable: flags a variable into Database.countQuery', () => {
+  const src = `public class Foo { Integer run(String q) { return Database.countQuery(q); } }`;
+  const v = dqvViolations(src);
+  assert.equal(v.length, 1);
+  assert.equal(v[0].ruleId, 'DatabaseQueryWithVariable');
+});
+
+test('DatabaseQueryWithVariable: flags a variable into Database.getQueryLocator', () => {
+  const src = `public class Foo { Database.QueryLocator run(String q) { return Database.getQueryLocator(q); } }`;
+  assert.equal(dqvViolations(src).length, 1);
+});
+
+test('DatabaseQueryWithVariable: no flag for a static countQuery', () => {
+  const src = `public class Foo { Integer run() { return Database.countQuery('SELECT COUNT() FROM Account'); } }`;
+  assert.equal(dqvViolations(src).length, 0);
+});
+
+// Inline bracketed SOQL is compile-checked and uses :binds — never injectable.
+// getQueryLocator commonly takes inline SOQL, so this must not be flagged.
+test('DatabaseQueryWithVariable: no flag for inline SOQL in getQueryLocator', () => {
+  const src = `public class Foo { Database.QueryLocator run() { return Database.getQueryLocator([SELECT Id FROM Account LIMIT 0]); } }`;
+  assert.equal(dqvViolations(src).length, 0);
+});
+
+test('ApexSOQLInjection: no flag for inline SOQL with a bind, even when a tainted name matches', () => {
+  const src = `
+public class Foo {
+  public Database.QueryLocator run() {
+    String name = ApexPages.currentPage().getParameters().get('name');
+    return Database.getQueryLocator([SELECT Id FROM Account WHERE Name = :name]);
+  }
+}`;
+  assert.equal(violations(src).length, 0);
+});
+
+test('ApexSOQLInjection: flags a tainted value into Database.countQuery', () => {
+  const src = `
+public class Foo {
+  public Integer run() {
+    String name = ApexPages.currentPage().getParameters().get('name');
+    String q = 'SELECT COUNT() FROM Account WHERE Name = ' + name;
+    return Database.countQuery(q);
+  }
+}`;
+  const v = violations(src);
+  assert.equal(v.length, 1);
+  assert.equal(v[0].ruleId, 'ApexSOQLInjection');
+});
+
+test('ApexSOQLInjection: flags a tainted value into Database.getQueryLocator', () => {
+  const src = `
+public class Foo {
+  public Database.QueryLocator run() {
+    String name = ApexPages.currentPage().getParameters().get('name');
+    String q = 'SELECT Id FROM Account WHERE Name = ' + name;
+    return Database.getQueryLocator(q);
+  }
+}`;
+  assert.equal(violations(src).length, 1);
+});
+
 test('ApexSOQLInjection: flags a tainted @AuraEnabled controller param reaching query', () => {
   const src = `public class Ctrl {
     @AuraEnabled
