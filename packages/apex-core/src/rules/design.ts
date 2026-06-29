@@ -1,7 +1,12 @@
 import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, walk } from "../ast/walk.js";
+import type {
+  AstNode,
+  ClassDeclarationContext,
+  MethodDeclarationContext,
+} from "../ast/contexts.js";
 
-function getClassName(classNode: any): string {
+function getClassName(classNode: ClassDeclarationContext): string {
   const id = classNode.id ? classNode.id() : null;
   return id ? textOf(id) : "Unknown";
 }
@@ -17,12 +22,12 @@ export const excessiveParameterList: Rule = {
   description: "Methods with more than 5 parameters are hard to call and test.",
   create(ctx) {
     return {
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         try {
           const fp = node.formalParameters?.();
           if (!fp) return;
           let count = 0;
-          walk(fp, (n) => {
+          walk(fp, (n: AstNode) => {
             if (nodeType(n) === "FormalParameterContext") count++;
           });
           if (count > 5) {
@@ -48,19 +53,19 @@ export const tooManyFields: Rule = {
   description: "Classes with more than 15 fields are a design smell — consider splitting.",
   create(ctx) {
     return {
-      ClassDeclarationContext: (node) => {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
         let fields = 0;
         for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-          const classBody = node.getChild(i);
+          const classBody = node.getChild(i) as AstNode;
           if (nodeType(classBody) !== "ClassBodyContext") continue;
           for (let j = 0; j < (classBody.getChildCount?.() ?? 0); j++) {
-            const decl = classBody.getChild(j);
+            const decl = classBody.getChild(j) as AstNode;
             if (nodeType(decl) !== "ClassBodyDeclarationContext") continue;
             for (let k = 0; k < (decl.getChildCount?.() ?? 0); k++) {
-              const member = decl.getChild(k);
+              const member = decl.getChild(k) as AstNode;
               if (nodeType(member) !== "MemberDeclarationContext") continue;
               for (let m = 0; m < (member.getChildCount?.() ?? 0); m++) {
-                const t = nodeType(member.getChild(m));
+                const t = nodeType(member.getChild(m) as AstNode);
                 if (t === "FieldDeclarationContext" || t === "PropertyDeclarationContext") fields++;
               }
             }
@@ -86,16 +91,16 @@ export const excessivePublicCount: Rule = {
   description: "Classes with more than 45 public members are hard to understand and maintain.",
   create(ctx) {
     return {
-      ClassDeclarationContext: (node) => {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
         let publicCount = 0;
         for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-          const body = node.getChild(i);
+          const body = node.getChild(i) as AstNode;
           if (nodeType(body) !== "ClassBodyContext") continue;
           for (let j = 0; j < (body.getChildCount?.() ?? 0); j++) {
-            const decl = body.getChild(j);
+            const decl = body.getChild(j) as AstNode;
             if (nodeType(decl) !== "ClassBodyDeclarationContext") continue;
             for (let k = 0; k < (decl.getChildCount?.() ?? 0); k++) {
-              const child = decl.getChild(k);
+              const child = decl.getChild(k) as AstNode;
               if (nodeType(child) === "ModifierContext") {
                 const t = textOf(child).toLowerCase();
                 if (t === "public" || t === "global") { publicCount++; break; }
@@ -125,9 +130,9 @@ const COGNITIVE_NODES = new Set([
  * Structural-aware DFS that accumulates score += (1 + nestingDepth) per structural node.
  * Does not descend into nested class declarations.
  */
-function calcCognitiveComplexity(node: any): number {
+function calcCognitiveComplexity(node: AstNode): number {
   let score = 0;
-  function dfs(n: any, depth: number): void {
+  function dfs(n: AstNode, depth: number): void {
     const t = nodeType(n);
     let nextDepth = depth;
     if (COGNITIVE_NODES.has(t)) {
@@ -136,7 +141,7 @@ function calcCognitiveComplexity(node: any): number {
     }
     const count = n.getChildCount?.() ?? 0;
     for (let i = 0; i < count; i++) {
-      const child = n.getChild(i);
+      const child = n.getChild(i) as AstNode;
       if (!child?.constructor?.name?.endsWith("Context")) continue;
       if (nodeType(child) === "ClassDeclarationContext") continue;
       dfs(child, nextDepth);
@@ -159,7 +164,7 @@ export const cognitiveComplexity: Rule = {
   description: "Methods with high cognitive complexity are exponentially harder to understand as nesting increases.",
   create(ctx) {
     return {
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         const score = calcCognitiveComplexity(node);
         if (score > 15) {
           const name = node.id ? textOf(node.id()) : "method";
@@ -195,22 +200,22 @@ export const unusedPrivateMethod: Rule = {
   description: "Private methods unreferenced within the class are dead code.",
   create(ctx) {
     return {
-      ClassDeclarationContext: (node) => {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
         // Only outer classes — inner class private methods may be called from the outer class
         if (nodeType(node.parentCtx) !== "TypeDeclarationContext") return;
 
         // Step 1: collect private, non-framework method declarations
-        const privateMethods = new Map<string, any>(); // lowercase name → MethodDeclarationContext
+        const privateMethods = new Map<string, MethodDeclarationContext>(); // lowercase name → MethodDeclarationContext
         for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-          const classBody = node.getChild(i);
+          const classBody = node.getChild(i) as AstNode;
           if (nodeType(classBody) !== "ClassBodyContext") continue;
           for (let j = 0; j < (classBody.getChildCount?.() ?? 0); j++) {
-            const decl = classBody.getChild(j);
+            const decl = classBody.getChild(j) as AstNode;
             if (nodeType(decl) !== "ClassBodyDeclarationContext") continue;
             let isPrivate = false;
             let skip = false;
             for (let k = 0; k < (decl.getChildCount?.() ?? 0); k++) {
-              const mod = decl.getChild(k);
+              const mod = decl.getChild(k) as AstNode;
               if (nodeType(mod) !== "ModifierContext") continue;
               const mt = textOf(mod).toLowerCase();
               if (mt === "private") isPrivate = true;
@@ -218,14 +223,16 @@ export const unusedPrivateMethod: Rule = {
             }
             if (!isPrivate || skip) continue;
             for (let k = 0; k < (decl.getChildCount?.() ?? 0); k++) {
-              const member = decl.getChild(k);
+              const member = decl.getChild(k) as AstNode;
               if (nodeType(member) !== "MemberDeclarationContext") continue;
               for (let m = 0; m < (member.getChildCount?.() ?? 0); m++) {
-                const mDecl = member.getChild(m);
-                if (nodeType(mDecl) !== "MethodDeclarationContext" || !mDecl.id) continue;
-                const name = textOf(mDecl.id()).toLowerCase();
+                const mDecl = member.getChild(m) as AstNode;
+                if (nodeType(mDecl) !== "MethodDeclarationContext") continue;
+                const typedMDecl = mDecl as MethodDeclarationContext;
+                if (!typedMDecl.id) continue;
+                const name = textOf(typedMDecl.id()).toLowerCase();
                 if (!FRAMEWORK_METHOD_NAMES.has(name) && !privateMethods.has(name)) {
-                  privateMethods.set(name, mDecl);
+                  privateMethods.set(name, typedMDecl);
                 }
               }
             }
@@ -240,7 +247,7 @@ export const unusedPrivateMethod: Rule = {
         // process — taking only the segment before the first `(` missed the tail
         // call and falsely flagged it as unused.
         const calledNames = new Set<string>();
-        walk(node, (n) => {
+        walk(node, (n: AstNode) => {
           const t = nodeType(n);
           if (t !== "MethodCallExpressionContext" && t !== "DotExpressionContext") return;
           for (const m of textOf(n).toLowerCase().matchAll(/([a-z_][a-z0-9_]*)\(/g)) {
@@ -260,11 +267,11 @@ export const unusedPrivateMethod: Rule = {
 };
 
 /** DFS walk that does not descend into nested class declarations. */
-function walkNoNestedClass(node: any, visit: (n: any) => void): void {
+function walkNoNestedClass(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   const count = node.getChildCount?.() ?? 0;
   for (let i = 0; i < count; i++) {
-    const child = node.getChild(i);
+    const child = node.getChild(i) as AstNode;
     if (!child?.constructor?.name?.endsWith("Context")) continue;
     if (nodeType(child) !== "ClassDeclarationContext") walkNoNestedClass(child, visit);
   }
@@ -292,9 +299,9 @@ export const cyclomaticComplexity: Rule = {
   description: "Methods with high cyclomatic complexity are hard to test and maintain.",
   create(ctx) {
     return {
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         let complexity = 1;
-        walkNoNestedClass(node, (n) => {
+        walkNoNestedClass(node, (n: AstNode) => {
           if (COMPLEXITY_NODES.has(nodeType(n))) complexity++;
         });
         if (complexity > 10) {
@@ -316,14 +323,14 @@ const NESTING_NODES = new Set([
   "DoWhileStatementContext",
 ]);
 
-function calcMaxDepth(node: any): number {
+function calcMaxDepth(node: AstNode): number {
   let max = 0;
-  function dfs(n: any, depth: number): void {
+  function dfs(n: AstNode, depth: number): void {
     const d = NESTING_NODES.has(nodeType(n)) ? depth + 1 : depth;
     if (d > max) max = d;
     const count = n.getChildCount?.() ?? 0;
     for (let i = 0; i < count; i++) {
-      const child = n.getChild(i);
+      const child = n.getChild(i) as AstNode;
       if (!child?.constructor?.name?.endsWith("Context")) continue;
       if (nodeType(child) !== "ClassDeclarationContext") dfs(child, d);
     }
@@ -344,7 +351,7 @@ export const avoidDeeplyNestedIfStmts: Rule = {
   description: "Deeply nested conditionals reduce readability; use early returns or extracted methods.",
   create(ctx) {
     return {
-      MethodDeclarationContext: (node) => {
+      MethodDeclarationContext: (node: MethodDeclarationContext) => {
         const depth = calcMaxDepth(node);
         if (depth > 4) {
           const name = node.id ? textOf(node.id()) : "method";
