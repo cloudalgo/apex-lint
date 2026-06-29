@@ -40,4 +40,9 @@ jobs:
         run: pnpm test
 
       - name: Smoke-test CLI
-        run: node packages/apex-lint-cli/dist/cli.js fixtures/sample-project --format json --output /dev/null --fail-on critical
+        # The fixture deliberately contains violations (incl. a critical), so we
+        # assert the CLI RUNS and emits valid JSON with findings — not that the
+        # fixture is clean. `|| true` ignores the lint exit code (1 = violations).
+        run: |
+          node packages/apex-lint-cli/dist/cli.js fixtures/sample-project --format json --output smoke.json || true
+          node -e "const d=require('./smoke.json'); if(!Array.isArray(d.violations)||d.violations.length===0){console.error('CLI emitted no violations — smoke test failed');process.exit(1);} console.log('Smoke OK:',d.violationCount,'violations')"
