@@ -1,5 +1,7 @@
 import { walk, nodeType, textOf } from "../ast/walk.js";
 import type {
+  AstNode,
+  MethodDeclarationContext,
   FormalParameterContext,
   VariableDeclaratorContext,
   LocalVariableDeclarationContext,
@@ -7,13 +9,18 @@ import type {
 
 const ENTRY_MODIFIER = /^(public|global|webservice)$/;
 
+// getTaint is called with a method OR constructor declaration node; both expose
+// formalParameters(). We narrow to MethodDeclarationContext for that one accessor.
+type DeclWithParams = MethodDeclarationContext;
+
 /** True when the method's access modifiers make it externally reachable. */
-export function isEntryPoint(methodNode: any): boolean {
+export function isEntryPoint(methodNode: AstNode): boolean {
   // Modifiers live on the enclosing ClassBodyDeclarationContext, two levels up:
   // MethodDeclarationContext -> MemberDeclarationContext -> ClassBodyDeclarationContext.
   const cbDecl = methodNode?.parentCtx?.parentCtx;
-  for (let i = 0; i < (cbDecl?.getChildCount?.() ?? 0); i++) {
-    const c = cbDecl.getChild(i);
+  if (!cbDecl) return false;
+  for (let i = 0; i < (cbDecl.getChildCount?.() ?? 0); i++) {
+    const c = cbDecl.getChild(i) as AstNode;
     if (nodeType(c) === "ModifierContext" && ENTRY_MODIFIER.test(textOf(c).toLowerCase())) {
       return true;
     }
@@ -22,9 +29,10 @@ export function isEntryPoint(methodNode: any): boolean {
 }
 
 /** Formal parameter names of a method (original case). */
-export function entryPointParamNames(methodNode: any): string[] {
+export function entryPointParamNames(methodNode: AstNode): string[] {
   const names: string[] = [];
-  const fp = methodNode?.formalParameters ? methodNode.formalParameters() : null;
+  const mn = methodNode as DeclWithParams;
+  const fp = mn?.formalParameters ? mn.formalParameters() : null;
   if (fp) {
     walk(fp, (p) => {
       if (nodeType(p) !== "FormalParameterContext") return;
@@ -93,7 +101,7 @@ export interface TaintResult {
 // node -> (sanitizer-key -> result). WeakMap so entries die with the parse tree.
 const taintCache = new WeakMap<object, Map<string, TaintResult>>();
 
-export function getTaint(methodNode: any, sanitizers: string[]): TaintResult {
+export function getTaint(methodNode: AstNode, sanitizers: string[]): TaintResult {
   let perNode = taintCache.get(methodNode);
   if (!perNode) taintCache.set(methodNode, (perNode = new Map()));
   const key = sanitizers.join("|");
@@ -102,12 +110,13 @@ export function getTaint(methodNode: any, sanitizers: string[]): TaintResult {
   return result;
 }
 
-function computeTaint(methodNode: any, sanitizers: string[]): TaintResult {
+function computeTaint(methodNode: AstNode, sanitizers: string[]): TaintResult {
   const tainted = new Set<string>();
   const entry = isEntryPoint(methodNode);
   // Seed only entry-point params whose type can carry injectable content.
   if (entry) {
-    const fp = methodNode?.formalParameters ? methodNode.formalParameters() : null;
+    const mn = methodNode as DeclWithParams;
+    const fp = mn?.formalParameters ? mn.formalParameters() : null;
     if (fp) {
       walk(fp, (p) => {
         if (nodeType(p) !== "FormalParameterContext") return;
