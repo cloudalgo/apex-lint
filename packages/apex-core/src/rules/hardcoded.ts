@@ -1,4 +1,5 @@
 import type { Rule } from "../engine/types.js";
+import type { AstNode, ClassDeclarationContext, LiteralContext } from "../ast/contexts.js";
 import { nodeType, textOf } from "../ast/walk.js";
 import { isTestClass } from "../ast/apex-helpers.js";
 
@@ -45,12 +46,12 @@ export const avoidHardcodedId: Rule = {
   create(ctx) {
     let inTestClass = false;
     return {
-      ClassDeclarationContext: (node) => {
-        if (nodeType(node.parentCtx) === "TypeDeclarationContext") {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
+        if (nodeType(node.parentCtx as AstNode) === "TypeDeclarationContext") {
           inTestClass = isTestClass(node);
         }
       },
-      LiteralContext: (node) => {
+      LiteralContext: (node: LiteralContext) => {
         const raw = textOf(node);
         if (raw.length < 17) return; // 15 chars + 2 quotes
         if (raw[0] !== "'" || raw[raw.length - 1] !== "'") return;
