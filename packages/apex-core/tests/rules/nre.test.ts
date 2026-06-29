@@ -56,6 +56,42 @@ public class Foo {
   assert.equal(violations(src).length, 0);
 });
 
+// Put-if-absent idiom: the key is ensured present before the dereference, so
+// get(k) cannot return null. Both the containsKey and get(k)==null forms are safe.
+test('MapGetWithoutNullCheck: no flag for containsKey put-if-absent then get', () => {
+  const src = `
+public class Foo {
+  public void run(Map<Id, List<Contact>> byAcct, Id acctId, Contact c) {
+    if (!byAcct.containsKey(acctId)) { byAcct.put(acctId, new List<Contact>()); }
+    byAcct.get(acctId).add(c);
+  }
+}`;
+  assert.equal(violations(src).length, 0);
+});
+
+test('MapGetWithoutNullCheck: no flag for get==null put-if-absent then get', () => {
+  const src = `
+public class Foo {
+  public void run(Map<Id, List<Contact>> byAcct, Id acctId, Contact c) {
+    if (byAcct.get(acctId) == null) { byAcct.put(acctId, new List<Contact>()); }
+    byAcct.get(acctId).add(c);
+  }
+}`;
+  assert.equal(violations(src).length, 0);
+});
+
+// Same-key matching: a put with a DIFFERENT key must NOT suppress the warning.
+test('MapGetWithoutNullCheck: still flags when a prior put used a different key', () => {
+  const src = `
+public class Foo {
+  public void run(Map<Id, Account> byId, Id firstId, Id secondId, Account x) {
+    byId.put(firstId, x);
+    String name = byId.get(secondId).Name;
+  }
+}`;
+  assert.equal(violations(src).length, 1);
+});
+
 test('MapGetWithoutNullCheck: no flag when safe navigation used', () => {
   const src = `
 public class Foo {
@@ -225,6 +261,30 @@ public class Foo {
 }`;
   const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
   assert.equal(v.length, 1);
+});
+
+// Schema describe chains (SObjectType.X.fields.Y, X.SObjectType.Z) are static
+// metadata access — no relationship traversal, never null. Must not be flagged.
+test('ChainedRelationshipAccess: no flag for SObjectType describe chain', () => {
+  const src = `
+public class Foo {
+  public void run() {
+    String n = SObjectType.Opportunity.fields.Amount.Name;
+  }
+}`;
+  const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
+  assert.equal(v.length, 0);
+});
+
+test('ChainedRelationshipAccess: no flag for an X.SObjectType.Y describe chain', () => {
+  const src = `
+public class Foo {
+  public void run() {
+    String n = Opportunity.SObjectType.Account.Name;
+  }
+}`;
+  const v = new Linter([chainedRelationshipAccess]).lint(src).violations;
+  assert.equal(v.length, 0);
 });
 
 test('ChainedRelationshipAccess: no flag for 2-level chain', () => {

@@ -286,3 +286,35 @@ as a design tradeoff rather than a bug. Adding param-based taint sources would i
 | ApexSOQLInjection (+ DatabaseQueryWithVariable) | 45 | 423 | apex-lint covers all real sinks after the countQuery/getQueryLocator fix |
 | ApexXSSFromURLParam | 22 | 2 | apex-lint correct; PMD flags sources/usages (false positives) |
 | ApexOpenRedirect | 5 | 1 | apex-lint correct; PMD coarse + cross-method (mostly false positives) |
+
+---
+
+## False-positive audit of apex-lint's high-volume unique rules
+
+PMD can't cross-validate rules it lacks, so the highest-volume apex-lint-only rules were
+audited directly. Two had material false-positive rates; both fixed.
+
+### ChainedRelationshipAccess — Schema describe chains (39% FP)
+Flagged `SObjectType.Opportunity.fields.Amount.Name` and `Opportunity.SObjectType.X` because
+"opportunity" is a known relationship field. These are **static Schema describe chains**, not
+record-relationship traversals — never null. The rule excluded the `Schema.*` namespace but not
+`SObjectType.*` or `.fields.`/`.fieldSets.` segments. Fix: skip any chain containing a describe
+segment (`sobjecttype`, `fields`, `fieldsets`). **160 → 97** (−63, all verified describe chains).
+
+### MapGetWithoutNullCheck — put-if-absent idiom (35% FP)
+`hasContainsKeyGuard` only checked *ancestor* if/while blocks, so it missed the common idiom
+where the dereference follows the guard block as a sibling:
+```apex
+if (!m.containsKey(k)) { m.put(k, new List<…>()); }   // or: if (m.get(k) == null) { m.put(k, …); }
+m.get(k).add(x);                                        // k is guaranteed present
+```
+Fix: `keyEnsuredEarlier()` scans the enclosing method for a **same-key** `map.put(key)` or
+`map.containsKey(key)` preceding the access (same-key matching avoids suppressing a genuine
+unguarded get on a different key). **278 → 181** (−97, all verified to have a same-key guard).
+
+### Validation
+- Corpus total: 17,324 → **17,164** (−160 false positives removed).
+- Every removed ChainedRelationshipAccess finding is a describe chain (0 non-describe).
+- Every removed MapGetWithoutNullCheck finding has a same-key put/containsKey guard; one
+  borderline case (map reassigned via SOQL between put and get) is an accepted heuristic edge.
+- Tests: **135/135 pass** (8 new). `tsc --noEmit` clean.

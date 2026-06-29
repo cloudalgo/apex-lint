@@ -59,6 +59,24 @@ function isInKeySetLoop(node: any, mapName: string): boolean {
 }
 
 /**
+ * Returns true if the key was ensured present earlier in the method via the
+ * put-if-absent idiom — either `<map>.containsKey(<key>)` or `<map>.put(<key>, …)`
+ * (both the `if(!m.containsKey(k))` and `if(m.get(k)==null)` forms end in a put).
+ * Same-key matching: a put/containsKey with a different key does not suppress.
+ * `keys` and `mapName` come from textOf (already whitespace-free); scope lines are
+ * whitespace-stripped to match.
+ */
+function keyEnsuredEarlier(mapName: string, keys: string[], scopeLines: string[]): boolean {
+  if (!mapName || keys.length === 0) return false;
+  const scope = scopeLines.join("\n").replace(/\s+/g, "").toLowerCase();
+  const m = mapName.toLowerCase();
+  return keys.some((k) => {
+    const kk = k.toLowerCase();
+    return scope.includes(`${m}.put(${kk}`) || scope.includes(`${m}.containskey(${kk}`);
+  });
+}
+
+/**
  * Returns true if node is inside an if/while block whose condition contains
  * `<mapName>.containsKey(` — guaranteeing the get() result is non-null.
  */
@@ -90,7 +108,13 @@ export const mapGetWithoutNullCheck: Rule = {
   description: "Map.get() returns null for missing keys — null-check the result or use ?. before accessing the property.",
   create(ctx) {
     const reportedLines = new Set<number>();
+    const sourceLines = ctx.source.split("\n");
+    // 1-based start line of the enclosing method/constructor — backward bound for
+    // put-if-absent guard detection (the guard precedes the dereference).
+    let scopeStartLine = 1;
     return {
+      MethodDeclarationContext: (node) => { scopeStartLine = node.start?.line ?? 1; },
+      ConstructorDeclarationContext: (node) => { scopeStartLine = node.start?.line ?? 1; },
       DotExpressionContext: (node) => {
         if (isInsideTestClass(node)) return;
         const text = textOf(node);
@@ -107,6 +131,8 @@ export const mapGetWithoutNullCheck: Rule = {
         if (isInKeySetLoop(node, mapName)) return;
         // containsKey() guard guarantees non-null get() results.
         if (hasContainsKeyGuard(node, mapName)) return;
+        // put-if-absent earlier in the method ensures the key is present.
+        if (keyEnsuredEarlier(mapName, getCallArguments(text.toLowerCase()), sourceLines.slice(scopeStartLine - 1, line - 1))) return;
         reportedLines.add(line);
         ctx.report(
           node,
@@ -215,6 +241,13 @@ const SYSTEM_NAMESPACES = new Set([
 ]);
 
 /**
+ * Schema describe segments. A chain containing any of these (e.g.
+ * `SObjectType.Opportunity.fields.Amount.Name` or `Opportunity.SObjectType.X`)
+ * is static metadata access — never a record relationship traversal, never null.
+ */
+const DESCRIBE_SEGMENTS = new Set(["sobjecttype", "fields", "fieldsets"]);
+
+/**
  * Detects multi-level sObject property chains that traverse relationships
  * without null guards. Each hop may be null if the relationship field was
  * not included in the SOQL SELECT clause.
@@ -246,6 +279,9 @@ export const chainedRelationshipAccess: Rule = {
 
         // Exclude known system namespaces (Schema.X.Y, System.X.Y, etc.)
         if (SYSTEM_NAMESPACES.has(parts[0].toLowerCase())) return;
+        // Exclude Schema describe chains (SObjectType.X.fields.Y, X.SObjectType.Z) —
+        // static metadata access, not a relationship traversal.
+        if (parts.some((p) => DESCRIBE_SEGMENTS.has(p.toLowerCase()))) return;
 
         // Only flag if an intermediate segment (not last) is a known sObject relationship
         const intermediate = parts.slice(0, -1); // all but last
