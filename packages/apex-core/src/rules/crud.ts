@@ -3,7 +3,6 @@ import type {
   AstNode,
   ClassDeclarationContext,
   LocalVariableDeclarationContext,
-  VariableDeclaratorContext,
   FormalParameterContext,
 } from "../ast/contexts.js";
 import { enclosingMethod, nodeType, textOf, walk } from "../ast/walk.js";
@@ -68,11 +67,10 @@ function resolveTargetType(dmlNode: AstNode, varName: string): string | undefine
       const d = n as LocalVariableDeclarationContext;
       const typeText = textOf(d.typeRef() as AstNode);
       const decls = d.variableDeclarators();
-      // Latent bug in original: variableDeclarator() called with no args on `any`
-      // returned null at runtime, making arr always empty (only FormalParameter
-      // resolution ever fired). variableDeclarator_list() is correct but changes
-      // count. Preserve original behavior pending a dedicated bug-fix commit.
-      const arr: VariableDeclaratorContext[] = decls ? [] : [];
+      // variableDeclarator_list() returns every declarator. The earlier
+      // variableDeclarator() (no-arg) returned null at runtime, so local-variable
+      // DML targets were silently never resolved — only formal params were.
+      const arr = decls ? decls.variableDeclarator_list() : [];
       for (const vd of arr) {
         const name = textOf(vd.id() as AstNode);
         if (name === varName) found = typeText;
