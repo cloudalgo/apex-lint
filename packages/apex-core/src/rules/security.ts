@@ -2,6 +2,14 @@ import type { Rule } from "../engine/types.js";
 import { nodeType, textOf, walk } from "../ast/walk.js";
 import { getTaint, stripStringLiterals, hasWordRef, SOQL_SANITIZERS as ENGINE_SOQL_SANITIZERS, XSS_SANITIZERS as ENGINE_XSS_SANITIZERS } from "../engine/taint.js";
 import { isInsideTestClass } from "../ast/apex-helpers.js";
+import type {
+  AstNode,
+  ClassDeclarationContext,
+  ConstructorDeclarationContext,
+  DotExpressionContext,
+  MethodDeclarationContext,
+  NewExpressionContext,
+} from "../ast/contexts.js";
 
 // `hasWordRef` and `stripStringLiterals` are shared with the taint engine —
 // imported from engine/taint.ts so the two never drift.
@@ -44,22 +52,22 @@ const DML_CONTEXT_TYPES = new Set([
   "UndeleteStatementContext",
 ]);
 
-function getClassName(classNode: any): string {
+function getClassName(classNode: ClassDeclarationContext): string {
   const id = classNode.id ? classNode.id() : null;
-  return id ? textOf(id) : "Unknown";
+  return id ? textOf(id as AstNode) : "Unknown";
 }
 
 /** TypeDeclarationContext parent of a ClassDeclarationContext holds its modifiers. */
-function typeHasSharing(classNode: any): boolean {
+function typeHasSharing(classNode: AstNode): boolean {
   const typeDecl = classNode.parentCtx;
   if (!typeDecl) return false;
   for (let i = 0; i < (typeDecl.getChildCount?.() ?? 0); i++) {
-    const child = typeDecl.getChild(i);
+    const child = typeDecl.getChild(i) as AstNode;
     if (nodeType(child) !== "ModifierContext") continue;
     if (textOf(child).toLowerCase().includes("sharing")) return true;
     // Also skip @IsTest classes — they run in system context and don't need sharing
     for (let j = 0; j < (child.getChildCount?.() ?? 0); j++) {
-      const ann = child.getChild(j);
+      const ann = child.getChild(j) as AstNode;
       if (nodeType(ann) === "AnnotationContext" &&
           textOf(ann).replace(/^@/, "").split("(")[0].toLowerCase() === "istest") return true;
     }
@@ -68,14 +76,14 @@ function typeHasSharing(classNode: any): boolean {
 }
 
 /** Walk the class body for DML/SOQL, skipping nested inner class bodies. */
-function classHasDmlOrSoql(classNode: any): boolean {
+function classHasDmlOrSoql(classNode: AstNode): boolean {
   let found = false;
-  function dfs(n: any): void {
+  function dfs(n: AstNode): void {
     if (found) return;
     if (DML_CONTEXT_TYPES.has(nodeType(n))) { found = true; return; }
     const count = n.getChildCount?.() ?? 0;
     for (let i = 0; i < count; i++) {
-      const child = n.getChild(i);
+      const child = n.getChild(i) as AstNode;
       if (!child?.constructor?.name?.endsWith("Context")) continue;
       // Skip nested inner classes — their sharing is their own responsibility
       if (n !== classNode && nodeType(child) === "ClassDeclarationContext") continue;
@@ -113,7 +121,7 @@ export const apexBadCrypto: Rule = {
     const WEAK = ["'md5'", "'sha1'", "'sha-1'", "'md2'", "'des'", "'3des'", "'rc4'",
                   "'hmacmd5'", "'hmacsha1'"];
     return {
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         const t = textOf(node).toLowerCase();
         if (!t.startsWith("crypto.") && !t.startsWith("system.crypto.")) return;
         for (const algo of WEAK) {
@@ -139,10 +147,10 @@ export const apexCsrf: Rule = {
   description: "DML in a constructor may execute on GET requests and cause unintended side effects.",
   create(ctx) {
     return {
-      ConstructorDeclarationContext: (node) => {
+      ConstructorDeclarationContext: (node: ConstructorDeclarationContext) => {
         let hasDml = false;
         // Use a walk that stops at nested class declarations
-        function dfs(n: any): void {
+        function dfs(n: AstNode): void {
           if (hasDml) return;
           const t = nodeType(n);
           if (
@@ -155,7 +163,7 @@ export const apexCsrf: Rule = {
           }
           const count = n.getChildCount?.() ?? 0;
           for (let i = 0; i < count; i++) {
-            const child = n.getChild(i);
+            const child = n.getChild(i) as AstNode;
             if (child?.constructor?.name?.endsWith("Context") && nodeType(child) !== "ClassDeclarationContext") {
               dfs(child);
             }
@@ -177,7 +185,7 @@ export const apexSharingViolations: Rule = {
   description: "Classes that perform SOQL/DML should declare sharing rules explicitly.",
   create(ctx) {
     return {
-      ClassDeclarationContext: (node) => {
+      ClassDeclarationContext: (node: ClassDeclarationContext) => {
         if (typeHasSharing(node)) return;
         if (!classHasDmlOrSoql(node)) return;
         ctx.report(
@@ -231,11 +239,11 @@ export const apexSOQLInjection: Rule = {
   severity: "critical",
   description: "User-controlled data flows into Database.query() — SOQL injection risk.",
   create(ctx) {
-    function check(methodNode: any): void {
+    function check(methodNode: AstNode): void {
       const { tainted } = getTaint(methodNode, ENGINE_SOQL_SANITIZERS);
       if (tainted.size === 0) return;
 
-      walk(methodNode, (n) => {
+      walk(methodNode, (n: AstNode) => {
         if (nodeType(n) !== "DotExpressionContext") return;
         const t = textOf(n).toLowerCase();
         if (!isSoqlSink(t)) return;
@@ -274,13 +282,13 @@ export const apexOpenRedirect: Rule = {
   severity: "high",
   description: "User-controlled URL flows into PageReference — open redirect risk.",
   create(ctx) {
-    function check(methodNode: any): void {
+    function check(methodNode: AstNode): void {
       // Skip @IsTest contexts — test code constructs PageReferences for test harness setup
       if (isInsideTestClass(methodNode)) return;
 
       const tainted = getTaint(methodNode, []).tainted;
 
-      walk(methodNode, (n) => {
+      walk(methodNode, (n: AstNode) => {
         if (nodeType(n) !== "NewExpressionContext") return;
         const t = textOf(n).toLowerCase();
         if (!t.startsWith("newpagereference(")) return;
@@ -315,11 +323,11 @@ export const apexSSRF: Rule = {
   severity: "high",
   description: "User-controlled URL flows into an HTTP callout endpoint — SSRF risk.",
   create(ctx) {
-    function check(methodNode: any): void {
+    function check(methodNode: AstNode): void {
       const tainted = getTaint(methodNode, []).tainted;
       if (tainted.size === 0) return;
 
-      walk(methodNode, (n) => {
+      walk(methodNode, (n: AstNode) => {
         if (nodeType(n) !== "DotExpressionContext") return;
         const t = textOf(n).toLowerCase();
         if (!t.includes(".setendpoint(")) return;
@@ -353,11 +361,11 @@ export const apexXSSFromURLParam: Rule = {
   severity: "high",
   description: "User-controlled data flows into a page message or unescaped error — XSS risk.",
   create(ctx) {
-    function check(methodNode: any): void {
+    function check(methodNode: AstNode): void {
       const tainted = getTaint(methodNode, ENGINE_XSS_SANITIZERS).tainted;
       if (tainted.size === 0) return;
 
-      walk(methodNode, (n) => {
+      walk(methodNode, (n: AstNode) => {
         const t = textOf(n).toLowerCase();
 
         // new ApexPages.Message(severity, taintedMsg)
@@ -412,18 +420,18 @@ export const databaseQueryWithVariable: Rule = {
   create(ctx) {
     return {
       // Database.query(x) parses as DotExpressionContext wrapping DotMethodCallContext
-      DotExpressionContext: (node) => {
+      DotExpressionContext: (node: DotExpressionContext) => {
         const full = textOf(node).toLowerCase();
         if (!isSoqlSink(full)) return;
 
         // Find the DotMethodCallContext child and check its first argument
         for (let i = 0; i < (node.getChildCount?.() ?? 0); i++) {
-          const child = node.getChild(i);
+          const child = node.getChild(i) as AstNode;
           if (nodeType(child) !== "DotMethodCallContext") continue;
           for (let j = 0; j < (child.getChildCount?.() ?? 0); j++) {
-            const grand = child.getChild(j);
+            const grand = child.getChild(j) as AstNode;
             if (nodeType(grand) !== "ExpressionListContext") continue;
-            const firstArg = grand.getChild(0);
+            const firstArg = grand.getChild(0) as AstNode;
             if (!firstArg) continue;
             const argText = textOf(firstArg);
             // Inline bracketed SOQL ([SELECT …]) is compile-checked and bind-safe.
